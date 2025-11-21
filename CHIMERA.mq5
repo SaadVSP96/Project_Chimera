@@ -1,46 +1,99 @@
 //+------------------------------------------------------------------+
-//| CHIMERA.mq5                                                       |
-//| Main Expert Advisor - Phase 1: Data Management Only              |
+//|                                                      CHIMERA.mq5 |
+//|                        Chimera EA v1.1 - Pattern Detection       |
 //+------------------------------------------------------------------+
 #property copyright "Quantech Innovation"
 #property link "https://quantechinnovation.com"
-#property version "1.00"
+#property version "1.10"
 
-// Include the market data system
+//--- Include Configuration
 #include "Include/Config/MarketDataConfig.mqh"
-#include "Include/Core/MarketData/CMarketDataManager.mqh"
+#include "Include/Config/SignalConfig.mqh"
 
-// Single master include - gets everything
+//--- Include Core Components
+#include "Include/Core/MarketData/CMarketDataManager.mqh"
+#include "Include/Core/Signal/CSignalState.mqh"
+
+//--- Include Analyzers
+#include "Include/Analysis/CRSIDivergence.mqh"
 
 //+------------------------------------------------------------------+
 //| Global Variables                                                  |
 //+------------------------------------------------------------------+
-CMarketDataManager* g_data_manager = NULL;  // Singleton reference
+// Singletons
+CMarketDataManager* g_data_manager = NULL;
+CSignalState* g_signal_state = NULL;
+
+// Configuration
+CSignalConfig* g_signal_config = NULL;
+
+// Analyzers
+CRSIDivergence* g_rsi_divergence = NULL;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
 //+------------------------------------------------------------------+
 int OnInit() {
    Print("═══════════════════════════════════════════════════════");
-   Print("  CHIMERA v1.0 - Market Data Management System");
+   Print("  CHIMERA v1.1 - Pattern Detection System");
    Print("═══════════════════════════════════════════════════════");
 
-   // Get singleton instance (creates and initializes on first call)
-   g_data_manager = CMarketDataManager::GetInstance();
+   //--- Step 1: Initialize Configuration
+   g_signal_config = new CSignalConfig();
 
+   //--- Step 2: Initialize Data Manager (Singleton)
+   g_data_manager = CMarketDataManager::GetInstance();
    if (g_data_manager == NULL) {
-      Print("ERROR: Failed to initialize Market Data Manager");
+      Print("ERROR: Failed to initialize CMarketDataManager");
       return INIT_FAILED;
    }
 
-   // Display configuration summary
+   //--- Step 3: Initialize Signal State (Singleton)
+   g_signal_state = CSignalState::GetInstance();
+   if (g_signal_state == NULL) {
+      Print("ERROR: Failed to initialize CSignalState");
+      return INIT_FAILED;
+   }
+
+   //--- Step 4: Initialize Analyzers
+   if (!InitializeAnalyzers()) {
+      Print("ERROR: Failed to initialize analyzers");
+      return INIT_FAILED;
+   }
+
+   //--- Print Configuration Summary
    PrintConfigurationSummary();
 
-   Print("CHIMERA initialized successfully");
-   Print("Data updates will occur on every tick");
+   Print("═══════════════════════════════════════════════════════");
+   Print("  CHIMERA initialized successfully");
    Print("═══════════════════════════════════════════════════════");
 
    return INIT_SUCCEEDED;
+}
+
+//+------------------------------------------------------------------+
+//| Initialize all analyzers                                          |
+//+------------------------------------------------------------------+
+bool InitializeAnalyzers() {
+   //--- RSI Divergence
+   if (g_signal_config.IsRSIEnabled()) {
+      g_rsi_divergence = new CRSIDivergence();
+
+      SRSIConfig rsi_config = g_signal_config.GetRSIConfig();
+
+      if (!g_rsi_divergence.Initialize(g_data_manager, rsi_config)) {
+         Print("ERROR: Failed to initialize CRSIDivergence");
+         return false;
+      }
+
+      Print("RSI Divergence analyzer initialized");
+   }
+
+   // Future: Add other analyzers here
+   // if(g_signal_config.IsCorrelationEnabled()) { ... }
+   // if(g_signal_config.IsTrendEnabled()) { ... }
+
+   return true;
 }
 
 //+------------------------------------------------------------------+
@@ -52,8 +105,23 @@ void OnDeinit(const int reason) {
    Print("  Reason: ", GetDeinitReasonText(reason));
    Print("═══════════════════════════════════════════════════════");
 
-   // Cleanup singleton
+   //--- Cleanup analyzers first
+   if (g_rsi_divergence != NULL) {
+      delete g_rsi_divergence;
+      g_rsi_divergence = NULL;
+   }
+
+   //--- Cleanup configuration
+   if (g_signal_config != NULL) {
+      delete g_signal_config;
+      g_signal_config = NULL;
+   }
+
+   //--- Cleanup singletons last
+   CSignalState::Destroy();
    CMarketDataManager::Destroy();
+
+   g_signal_state = NULL;
    g_data_manager = NULL;
 }
 
@@ -61,112 +129,153 @@ void OnDeinit(const int reason) {
 //| Expert tick function                                              |
 //+------------------------------------------------------------------+
 void OnTick() {
-   // Update all market data (called every tick)
+   //--- Step 1: Update all market data
    if (!g_data_manager.UpdateAll()) {
       Print("WARNING: Failed to update market data");
       return;
    }
 
-   // Display sample data every 10 seconds (to avoid spam)
-   static datetime last_display_time = 0;
-   datetime current_time = TimeCurrent();
+   //--- Step 2: Reset signal state for this tick
+   g_signal_state.ResetAll();
 
-   if (current_time - last_display_time >= 10) {
-      DisplaySampleData();
-      last_display_time = current_time;
+   //--- Step 3: Run all active analyzers
+   RunAnalyzers();
+
+   //--- Step 4: Calculate confluence score (future: move to scoring function)
+   int score = CalculateConfluenceScore();
+
+   //--- Step 5: Trade decision block (future implementation)
+   // if(score >= 3 && g_signal_state.PassesFilters()) {
+   //     ExecuteTrade();
+   // }
+
+   //--- Step 6: Display status (throttled)
+   static datetime last_display = 0;
+   if (TimeCurrent() - last_display >= 10) {
+      DisplayStatus();
+      last_display = TimeCurrent();
    }
 }
 
 //+------------------------------------------------------------------+
-//| Display configuration summary                                     |
+//| Run all active analyzers                                          |
+//+------------------------------------------------------------------+
+void RunAnalyzers() {
+   //--- RSI Divergence
+   if (g_rsi_divergence != NULL && g_rsi_divergence.IsInitialized()) {
+      SRSIDivergenceResult rsi_result;
+      g_rsi_divergence.Analyze(rsi_result);
+      g_signal_state.SetRSIDivergence(rsi_result);
+
+      // Log detection
+      if (rsi_result.detected) {
+         string div_type = rsi_result.is_bullish ? "BULLISH" : "BEARISH";
+         Print("══════ RSI DIVERGENCE DETECTED ══════");
+         Print("Type: ", div_type);
+         Print("RSI Current: ", DoubleToString(rsi_result.rsi_current, 2));
+         Print("RSI Previous: ", DoubleToString(rsi_result.rsi_previous, 2));
+         Print("Bars Between: ", rsi_result.bars_between);
+         Print("═════════════════════════════════════");
+      }
+   }
+
+   // Future: Add other analyzers
+   // if(g_correlation != NULL) { g_correlation.Analyze(...); }
+   // if(g_trend != NULL) { g_trend.Analyze(...); }
+}
+
+//+------------------------------------------------------------------+
+//| Calculate confluence score                                        |
+//+------------------------------------------------------------------+
+int CalculateConfluenceScore() {
+   int score = 0;
+
+   // 1. Base signal (RSI or Harmonic)
+   if (g_signal_state.HasBaseSignal())
+      score++;
+
+   // 2. DXY Correlation < -0.6
+   if (g_signal_state.HasValidCorrelation())
+      score++;
+
+   // 3. Harmonic pattern when RSI is base (future)
+   // if(has_harmonic && has_rsi) score++;
+
+   // 4. Strong correlation < -0.7
+   if (g_signal_state.HasStrongCorrelation())
+      score++;
+
+   // 5. All timeframes aligned
+   if (g_signal_state.IsTrendAligned())
+      score++;
+
+   return score;
+}
+
+//+------------------------------------------------------------------+
+//| Display current status                                            |
+//+------------------------------------------------------------------+
+void DisplayStatus() {
+   Print("\n╔═══════════════════════════════════════════════════════╗");
+   Print("║  CHIMERA Status Update                                 ║");
+   Print("╚═══════════════════════════════════════════════════════╝");
+
+   //--- Market Data Sample
+   SRSIConfig rsi_cfg = g_signal_config.GetRSIConfig();
+   double close = g_data_manager.Close(rsi_cfg.symbol, rsi_cfg.timeframe, 0);
+   datetime time = g_data_manager.Time(rsi_cfg.symbol, rsi_cfg.timeframe, 0);
+
+   Print(StringFormat("%s %s [0]: %.2f @ %s",
+                      rsi_cfg.symbol,
+                      EnumToString(rsi_cfg.timeframe),
+                      close,
+                      TimeToString(time, TIME_DATE | TIME_MINUTES)));
+
+   //--- RSI Status
+   if (g_rsi_divergence != NULL && g_rsi_divergence.IsInitialized()) {
+      Print(StringFormat("RSI Current: %.2f | Price Pivots: %d | RSI Pivots: %d",
+                         g_rsi_divergence.GetCurrentRSI(),
+                         g_rsi_divergence.GetPricePivotCount(),
+                         g_rsi_divergence.GetRSIPivotCount()));
+   }
+
+   //--- Signal State
+   SRSIDivergenceResult rsi = g_signal_state.GetRSI();
+   Print(StringFormat("RSI Divergence: %s | Direction: %s",
+                      rsi.detected ? "DETECTED" : "None",
+                      rsi.is_bullish ? "BULLISH" : (rsi.detected ? "BEARISH" : "N/A")));
+
+   //--- Confluence Score
+   int score = CalculateConfluenceScore();
+   Print(StringFormat("Confluence Score: %d/5", score));
+
+   Print("═══════════════════════════════════════════════════════\n");
+}
+
+//+------------------------------------------------------------------+
+//| Print configuration summary                                       |
 //+------------------------------------------------------------------+
 void PrintConfigurationSummary() {
    Print("─────────────────────────────────────────────────────");
-   Print("Configuration Summary:");
+   Print("Signal Configuration:");
    Print("─────────────────────────────────────────────────────");
 
-   // Get config
-   CMarketDataConfig* config = g_data_manager.GetConfig();
-
-   for (int i = 0; i < config.GetSymbolCount(); i++) {
-      SSymbolTimeframeConfig sym_config;
-      if (config.GetSymbolConfig(i, sym_config)) {
-         Print(StringFormat("Symbol %d: %s", i + 1, sym_config.symbol));
-         Print(StringFormat("  Buffer Size: %d bars", sym_config.buffer_size));
-         Print(StringFormat("  Timeframes: %d", ArraySize(sym_config.timeframes)));
-
-         string tf_list = "  TFs: ";
-         for (int j = 0; j < ArraySize(sym_config.timeframes); j++) {
-            tf_list += EnumToString(sym_config.timeframes[j]);
-            if (j < ArraySize(sym_config.timeframes) - 1)
-               tf_list += ", ";
-         }
-         Print(tf_list);
-         Print("─────────────────────────────────────────────────────");
-      }
-   }
-}
-
-//+------------------------------------------------------------------+
-//| Display sample data from all symbols                             |
-//+------------------------------------------------------------------+
-void DisplaySampleData() {
-   Print("\n╔═══════════════════════════════════════════════════════╗");
-   Print("║  Current Market Data (Sample)                        ║");
-   Print("╚═══════════════════════════════════════════════════════╝");
-
-   // Get symbol configs
-   CMarketDataConfig* config = g_data_manager.GetConfig();
-   SSymbolTimeframeConfig XAUUSD_config;
-   if (!config.GetSymbolConfig(0, XAUUSD_config)) {
-      Print("ERROR: Failed to get Config For XAUUSDm");
-      return;
-   }
-   SSymbolTimeframeConfig EURUSD_config;
-   if (!config.GetSymbolConfig(1, EURUSD_config)) {
-      Print("ERROR: Failed to get Config For XAUUSDm");
-      return;
-   }
-   SSymbolTimeframeConfig DXY_config;
-   if (!config.GetSymbolConfig(2, DXY_config)) {
-      Print("ERROR: Failed to get Config For DXYm");
-      return;
+   SRSIConfig rsi = g_signal_config.GetRSIConfig();
+   Print(StringFormat("RSI Divergence: %s", rsi.enabled ? "ENABLED" : "DISABLED"));
+   if (rsi.enabled) {
+      Print(StringFormat("  Symbol: %s | TF: %s | Period: %d",
+                         rsi.symbol, EnumToString(rsi.timeframe), rsi.rsi_period));
+      Print(StringFormat("  Pivots: L=%d R=%d | Oversold: %.0f | Overbought: %.0f",
+                         rsi.pivot_left, rsi.pivot_right, rsi.oversold, rsi.overbought));
    }
 
-   //  Now Printing results:
-   // XAUUSD on M5
-   double xau_m5_close = g_data_manager.Close(XAUUSD_config.symbol, XAUUSD_config.timeframes[0], 0);
-   datetime xau_m5_time = g_data_manager.Time(XAUUSD_config.symbol, XAUUSD_config.timeframes[0], 0);
+   SCorrelationConfig corr = g_signal_config.GetCorrelationConfig();
+   Print(StringFormat("Correlation: %s", corr.enabled ? "ENABLED" : "DISABLED"));
 
-   Print(StringFormat("XAUUSD M5  [0]: %.2f @ %s",
-                      xau_m5_close,
-                      TimeToString(xau_m5_time, TIME_DATE | TIME_MINUTES)));
+   STrendConfig trend = g_signal_config.GetTrendConfig();
+   Print(StringFormat("Trend Filter: %s", trend.enabled ? "ENABLED" : "DISABLED"));
 
-   // XAUUSD on H4
-   double xau_h4_close = g_data_manager.Close(XAUUSD_config.symbol, XAUUSD_config.timeframes[3], 0);
-   datetime xau_h4_time = g_data_manager.Time(XAUUSD_config.symbol, XAUUSD_config.timeframes[3], 0);
-
-   Print(StringFormat("XAUUSD H4  [0]: %.2f @ %s",
-                      xau_h4_close,
-                      TimeToString(xau_h4_time, TIME_DATE | TIME_MINUTES)));
-
-   // EURUSD on M5
-   double eur_m5_close = g_data_manager.Close(EURUSD_config.symbol, EURUSD_config.timeframes[0], 0);
-   datetime eur_m5_time = g_data_manager.Time(EURUSD_config.symbol, EURUSD_config.timeframes[0], 0);
-
-   Print(StringFormat("EURUSD M5    [0]: %.2f @ %s",
-                      eur_m5_close,
-                      TimeToString(eur_m5_time, TIME_DATE | TIME_MINUTES)));
-
-   // DXY on M5
-   double dxy_m5_close = g_data_manager.Close(DXY_config.symbol, DXY_config.timeframes[0], 0);
-   datetime dxy_m5_time = g_data_manager.Time(DXY_config.symbol, DXY_config.timeframes[0], 0);
-
-   Print(StringFormat("DXY M5     [0]: %.2f @ %s",
-                      dxy_m5_close,
-                      TimeToString(dxy_m5_time, TIME_DATE | TIME_MINUTES)));
-
-   Print("═══════════════════════════════════════════════════════\n");
+   Print("─────────────────────────────────────────────────────");
 }
 
 //+------------------------------------------------------------------+
