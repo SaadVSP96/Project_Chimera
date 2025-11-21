@@ -41,6 +41,11 @@ class CMarketDataManager {
       return s_instance;
    }
 
+   // Get the config object
+   CMarketDataConfig* GetConfig(void) {
+      return m_config;  // Directly return pointer (can be NULL)
+   }
+
    // Destroy singleton (call in OnDeinit)
    static void Destroy(void) {
       if (s_instance != NULL) {
@@ -108,8 +113,10 @@ class CMarketDataManager {
          m_symbols[i] = new CSymbolData();
          m_symbol_map[i] = config.symbol;
 
-         if (!m_symbols[i].Initialize(config))
+         if (!m_symbols[i].Initialize(config)) {
+            Print("ERROR: Failed to initialize " + config.symbol);
             return false;
+         }
       }
 
       return true;

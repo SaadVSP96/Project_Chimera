@@ -40,8 +40,8 @@ class CMarketDataConfig {
       ArrayResize(m_symbols, 3);  // 3 symbols for Chimera
 
       // Symbol 1: XAUUSD
-      m_symbols[0].symbol = "XAUUSD";
-      m_symbols[0].buffer_size = 500;
+      m_symbols[0].symbol = "XAUUSDm";
+      m_symbols[0].buffer_size = 100;
       ArrayResize(m_symbols[0].timeframes, 4);
       m_symbols[0].timeframes[0] = PERIOD_M5;
       m_symbols[0].timeframes[1] = PERIOD_M15;
@@ -49,8 +49,8 @@ class CMarketDataConfig {
       m_symbols[0].timeframes[3] = PERIOD_H4;
 
       // Symbol 2: US30
-      m_symbols[1].symbol = "US30";
-      m_symbols[1].buffer_size = 500;
+      m_symbols[1].symbol = "EURUSDm";
+      m_symbols[1].buffer_size = 100;
       ArrayResize(m_symbols[1].timeframes, 4);
       m_symbols[1].timeframes[0] = PERIOD_M5;
       m_symbols[1].timeframes[1] = PERIOD_M15;
@@ -58,8 +58,8 @@ class CMarketDataConfig {
       m_symbols[1].timeframes[3] = PERIOD_H4;
 
       // Symbol 3: DXY
-      m_symbols[2].symbol = "DXY";
-      m_symbols[2].buffer_size = 500;
+      m_symbols[2].symbol = "DXYm";
+      m_symbols[2].buffer_size = 100;
       ArrayResize(m_symbols[2].timeframes, 1);
       m_symbols[2].timeframes[0] = PERIOD_M5;  // Only M5 for correlation
    }

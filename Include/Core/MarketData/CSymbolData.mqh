@@ -33,8 +33,7 @@ class CSymbolData {
          m_tf_map[i] = config.timeframes[i];
 
          if (!m_timeframes[i].Initialize(m_symbol, config.timeframes[i], config.buffer_size)) {
-            // CLogger::GetInstance().Error("Failed to initialize " + m_symbol + " " +
-            //                              EnumToString(config.timeframes[i]));
+            Print("ERROR: Failed to initialize " + m_symbol + " " + EnumToString(config.timeframes[i]));
             return false;
          }
       }
