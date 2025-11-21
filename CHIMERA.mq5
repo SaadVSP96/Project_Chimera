@@ -10,6 +10,8 @@
 #include "Include/Config/MarketDataConfig.mqh"
 #include "Include/Core/MarketData/CMarketDataManager.mqh"
 
+// Single master include - gets everything
+
 //+------------------------------------------------------------------+
 //| Global Variables                                                  |
 //+------------------------------------------------------------------+
