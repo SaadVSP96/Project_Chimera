@@ -484,15 +484,15 @@ class CTradingConfig {
       // SECTION 1: Identity & Symbols
       //=============================================================
       m_identity.magic_number = 202411;
-      m_identity.symbol_trade = "XAUUSD";
-      m_identity.symbol_corr_primary = "DXY";
-      m_identity.symbol_corr_secondary = "US30";
+      m_identity.symbol_trade = "XAUUSDm";
+      m_identity.symbol_corr_primary = "DXYm";
+      m_identity.symbol_corr_secondary = "US30m";
 
       //=============================================================
       // SECTION 2: Phase Boundaries
       //=============================================================
-      m_phase.balance_phase_1_limit = 1000.0;  // Phase 1 → 2 at $1,000
-      m_phase.balance_phase_2_limit = 5000.0;  // Phase 2 → 3 at $5,000
+      m_phase.balance_phase_1_limit = 52000.0;  // Phase 1 → 2 at $1,000
+      m_phase.balance_phase_2_limit = 60000.0;  // Phase 2 → 3 at $5,000
 
       //=============================================================
       // SECTION 3: Risk Per Phase
