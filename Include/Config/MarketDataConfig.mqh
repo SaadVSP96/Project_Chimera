@@ -48,7 +48,7 @@ class CMarketDataConfig {
       m_symbols[0].timeframes[2] = PERIOD_H1;
       m_symbols[0].timeframes[3] = PERIOD_H4;
 
-      // Symbol 2: US30
+      // Symbol 2: US30 (Not Getting Data.)
       m_symbols[1].symbol = "EURUSDm";
       m_symbols[1].buffer_size = 100;
       ArrayResize(m_symbols[1].timeframes, 4);

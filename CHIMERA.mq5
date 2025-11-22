@@ -1,10 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                                      CHIMERA.mq5 |
-//|                        Chimera EA v1.1 - Pattern Detection       |
+//|                        Chimera EA v1.2 - Pattern Detection       |
 //+------------------------------------------------------------------+
 #property copyright "Quantech Innovation"
 #property link "https://quantechinnovation.com"
-#property version "1.10"
+#property version "1.20"
 
 //--- Include Configuration
 #include "Include/Config/MarketDataConfig.mqh"
@@ -37,7 +37,7 @@ CCorrelationAnalyzer* g_correlation = NULL;
 //+------------------------------------------------------------------+
 int OnInit() {
    Print("═══════════════════════════════════════════════════════");
-   Print("  CHIMERA v1.1 - Pattern Detection System");
+   Print("  CHIMERA v1.2 - Pattern Detection System");
    Print("═══════════════════════════════════════════════════════");
 
    //--- Step 1: Initialize Configuration
@@ -91,7 +91,6 @@ bool InitializeAnalyzers() {
       Print("RSI Divergence analyzer initialized");
    }
 
-   // Future: Add other analyzers here
    //--- Correlation Analyzer
    if (g_signal_config.IsCorrelationEnabled()) {
       g_correlation = new CCorrelationAnalyzer();
@@ -105,6 +104,8 @@ bool InitializeAnalyzers() {
 
       Print("Correlation analyzer initialized");
    }
+
+   // Future: Add other analyzers here
    // if(g_signal_config.IsTrendEnabled()) { ... }
 
    return true;
@@ -124,6 +125,7 @@ void OnDeinit(const int reason) {
       delete g_rsi_divergence;
       g_rsi_divergence = NULL;
    }
+
    if (g_correlation != NULL) {
       delete g_correlation;
       g_correlation = NULL;
@@ -159,7 +161,7 @@ void OnTick() {
    //--- Step 3: Run all active analyzers
    RunAnalyzers();
 
-   //--- Step 4: Calculate confluence score (future: move to scoring function)
+   //--- Step 4: Calculate confluence score
    int score = CalculateConfluenceScore();
 
    //--- Step 5: Trade decision block (future implementation)
@@ -218,7 +220,6 @@ void RunAnalyzers() {
    }
 
    // Future: Add other analyzers
-   // if(g_correlation != NULL) { g_correlation.Analyze(...); }
    // if(g_trend != NULL) { g_trend.Analyze(...); }
 }
 
@@ -277,12 +278,6 @@ void DisplayStatus() {
                          g_rsi_divergence.GetRSIPivotCount()));
    }
 
-   //--- Signal State
-   SRSIDivergenceResult rsi = g_signal_state.GetRSI();
-   Print(StringFormat("RSI Divergence: %s | Direction: %s",
-                      rsi.detected ? "DETECTED" : "None",
-                      rsi.is_bullish ? "BULLISH" : (rsi.detected ? "BEARISH" : "N/A")));
-
    //--- Correlation Status
    if (g_correlation != NULL && g_correlation.IsInitialized()) {
       SCorrelationResult corr = g_signal_state.GetCorrelation();
@@ -294,6 +289,12 @@ void DisplayStatus() {
                          corr.is_strong ? "YES" : "NO",
                          corr.signal_boost));
    }
+
+   //--- Signal State
+   SRSIDivergenceResult rsi = g_signal_state.GetRSI();
+   Print(StringFormat("RSI Divergence: %s | Direction: %s",
+                      rsi.detected ? "DETECTED" : "None",
+                      rsi.is_bullish ? "BULLISH" : (rsi.detected ? "BEARISH" : "N/A")));
 
    //--- Confluence Score
    int score = CalculateConfluenceScore();
@@ -322,7 +323,6 @@ void PrintConfigurationSummary() {
    SCorrelationConfig corr = g_signal_config.GetCorrelationConfig();
    Print(StringFormat("Correlation: %s", corr.enabled ? "ENABLED" : "DISABLED"));
    if (corr.enabled) {
-      // Get actual symbol names from data manager
       string sym1 = g_data_manager.GetSymbolName(corr.symbol1_index);
       string sym2 = g_data_manager.GetSymbolName(corr.symbol2_index);
       Print(StringFormat("  Symbols: %s (idx %d) / %s (idx %d)",
