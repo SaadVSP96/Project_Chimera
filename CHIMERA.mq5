@@ -30,10 +30,14 @@ CSignalState* g_signal_state = NULL;
 
 // Configuration
 CSignalConfig* g_signal_config = NULL;
+CTradingConfig* g_trading_config = NULL;
 
 // Analyzers
 CRSIDivergence* g_rsi_divergence = NULL;
 CCorrelationAnalyzer* g_correlation = NULL;
+
+// Trade Manager
+CChimeraTradeManager* g_trade_manager = NULL;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
@@ -45,7 +49,7 @@ int OnInit() {
 
    //--- Step 1: Initialize Configuration
    g_signal_config = new CSignalConfig();
-
+   g_trading_config = new CTradingConfig();
    //--- Step 2: Initialize Data Manager (Singleton)
    g_data_manager = CMarketDataManager::GetInstance();
    if (g_data_manager == NULL) {
@@ -66,20 +70,17 @@ int OnInit() {
       return INIT_FAILED;
    }
 
-   // Initialize config with defaults
-   CTradingConfig::InitializeDefaults(g_trading_config);
-   
-   // Validate configuration
-   if(!CTradingConfig::ValidateConfig(g_trading_config)) {
+   // Validate
+   if (!g_trading_config.ValidateConfig()) {
       return INIT_PARAMETERS_INCORRECT;
    }
-   
-   // Print summary to log
-   CTradingConfig::PrintConfigSummary(g_trading_config);
-   
-   // Create trade manager
-   g_trade_manager = new CChimeraTradeManager(g_trading_config);
-   
+
+   // Print summary
+   g_trading_config.PrintConfigSummary();
+
+   // Get flat config and pass to trade manager
+   ChimeraConfig cfg = g_trading_config.GetConfig();
+   g_trade_manager = new CChimeraTradeManager(cfg);
 
    //--- Print Configuration Summary
    PrintConfigurationSummary();
