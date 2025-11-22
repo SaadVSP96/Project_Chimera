@@ -15,6 +15,7 @@
 #include "Include/Core/Signal/CSignalState.mqh"
 
 //--- Include Analyzers
+#include "Include/Analysis/CCorrelationAnalyzer.mqh"
 #include "Include/Analysis/CRSIDivergence.mqh"
 
 //+------------------------------------------------------------------+
@@ -29,6 +30,7 @@ CSignalConfig* g_signal_config = NULL;
 
 // Analyzers
 CRSIDivergence* g_rsi_divergence = NULL;
+CCorrelationAnalyzer* g_correlation = NULL;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
@@ -90,7 +92,19 @@ bool InitializeAnalyzers() {
    }
 
    // Future: Add other analyzers here
-   // if(g_signal_config.IsCorrelationEnabled()) { ... }
+   //--- Correlation Analyzer
+   if (g_signal_config.IsCorrelationEnabled()) {
+      g_correlation = new CCorrelationAnalyzer();
+
+      SCorrelationConfig corr_config = g_signal_config.GetCorrelationConfig();
+
+      if (!g_correlation.Initialize(g_data_manager, corr_config)) {
+         Print("ERROR: Failed to initialize CCorrelationAnalyzer");
+         return false;
+      }
+
+      Print("Correlation analyzer initialized");
+   }
    // if(g_signal_config.IsTrendEnabled()) { ... }
 
    return true;
@@ -109,6 +123,10 @@ void OnDeinit(const int reason) {
    if (g_rsi_divergence != NULL) {
       delete g_rsi_divergence;
       g_rsi_divergence = NULL;
+   }
+   if (g_correlation != NULL) {
+      delete g_correlation;
+      g_correlation = NULL;
    }
 
    //--- Cleanup configuration
@@ -179,6 +197,26 @@ void RunAnalyzers() {
       }
    }
 
+   //--- Correlation Analysis
+   if (g_correlation != NULL && g_correlation.IsInitialized()) {
+      SCorrelationResult corr_result;
+      g_correlation.Analyze(corr_result);
+      g_signal_state.SetCorrelation(corr_result);
+
+      // Log significant correlation changes (throttled to avoid spam)
+      static double last_logged_corr = 0.0;
+      if (MathAbs(corr_result.value - last_logged_corr) > 0.05) {
+         string status = corr_result.meets_threshold ? "VALID" : "WEAK";
+         Print(StringFormat("Correlation [%s/%s]: %.3f | Status: %s | Boost: %.2fx",
+                            g_correlation.GetSymbol1(),
+                            g_correlation.GetSymbol2(),
+                            corr_result.value,
+                            status,
+                            corr_result.signal_boost));
+         last_logged_corr = corr_result.value;
+      }
+   }
+
    // Future: Add other analyzers
    // if(g_correlation != NULL) { g_correlation.Analyze(...); }
    // if(g_trend != NULL) { g_trend.Analyze(...); }
@@ -245,6 +283,18 @@ void DisplayStatus() {
                       rsi.detected ? "DETECTED" : "None",
                       rsi.is_bullish ? "BULLISH" : (rsi.detected ? "BEARISH" : "N/A")));
 
+   //--- Correlation Status
+   if (g_correlation != NULL && g_correlation.IsInitialized()) {
+      SCorrelationResult corr = g_signal_state.GetCorrelation();
+      Print(StringFormat("Correlation [%s/%s]: %.3f | Valid: %s | Strong: %s | Boost: %.2fx",
+                         g_correlation.GetSymbol1(),
+                         g_correlation.GetSymbol2(),
+                         corr.value,
+                         corr.meets_threshold ? "YES" : "NO",
+                         corr.is_strong ? "YES" : "NO",
+                         corr.signal_boost));
+   }
+
    //--- Confluence Score
    int score = CalculateConfluenceScore();
    Print(StringFormat("Confluence Score: %d/5", score));
@@ -271,6 +321,17 @@ void PrintConfigurationSummary() {
 
    SCorrelationConfig corr = g_signal_config.GetCorrelationConfig();
    Print(StringFormat("Correlation: %s", corr.enabled ? "ENABLED" : "DISABLED"));
+   if (corr.enabled) {
+      // Get actual symbol names from data manager
+      string sym1 = g_data_manager.GetSymbolName(corr.symbol1_index);
+      string sym2 = g_data_manager.GetSymbolName(corr.symbol2_index);
+      Print(StringFormat("  Symbols: %s (idx %d) / %s (idx %d)",
+                         sym1, corr.symbol1_index, sym2, corr.symbol2_index));
+      Print(StringFormat("  TF: %s | Period: %d",
+                         EnumToString(corr.timeframe), corr.period));
+      Print(StringFormat("  Threshold: %.2f | Strong: %.2f",
+                         corr.threshold, corr.strong_threshold));
+   }
 
    STrendConfig trend = g_signal_config.GetTrendConfig();
    Print(StringFormat("Trend Filter: %s", trend.enabled ? "ENABLED" : "DISABLED"));

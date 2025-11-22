@@ -71,6 +71,18 @@ class CMarketDataManager {
       return NULL;
    }
 
+   // Get symbol name by index (for config-driven symbol selection)
+   string GetSymbolName(int index) {
+      if (index >= 0 && index < ArraySize(m_symbol_map))
+         return m_symbol_map[index];
+      return "";
+   }
+
+   // Get total number of configured symbols
+   int GetSymbolCount(void) {
+      return ArraySize(m_symbol_map);
+   }
+
    // Convenience accessors (TradingView-style access)
    // Usage: CMarketDataManager::GetInstance().Close("XAUUSD", PERIOD_H4, 0)
    double Open(string symbol, ENUM_TIMEFRAMES tf, int shift = 0) {

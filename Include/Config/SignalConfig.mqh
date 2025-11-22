@@ -26,12 +26,12 @@ struct SRSIConfig {
 //+------------------------------------------------------------------+
 struct SCorrelationConfig {
    bool enabled;
-   string symbol1;  // Primary symbol (XAUUSD)
-   string symbol2;  // Correlation symbol (DXY)
+   int symbol1_index;  // Index in MarketDataConfig (0 = XAUUSD)
+   int symbol2_index;  // Index in MarketDataConfig (2 = DXY)
    ENUM_TIMEFRAMES timeframe;
-   int period;               // Rolling window
-   double threshold;         // Minimum for trade (-0.6)
-   double strong_threshold;  // Strong correlation (-0.7)
+   int period;               // Rolling window for correlation
+   double threshold;         // Minimum correlation for trade (-0.6)
+   double strong_threshold;  // Strong correlation for boost (-0.7)
 };
 
 //+------------------------------------------------------------------+
@@ -103,8 +103,8 @@ class CSignalConfig {
 
       //--- Correlation Settings ---
       m_correlation.enabled = true;
-      m_correlation.symbol1 = "XAUUSDm";
-      m_correlation.symbol2 = "DXYm";
+      m_correlation.symbol1_index = 0;  // Index 0 = XAUUSDm (primary)
+      m_correlation.symbol2_index = 2;  // Index 2 = DXYm (correlation filter)
       m_correlation.timeframe = PERIOD_M5;
       m_correlation.period = 50;
       m_correlation.threshold = -0.6;
