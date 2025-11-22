@@ -18,6 +18,9 @@
 #include "Include/Analysis/CCorrelationAnalyzer.mqh"
 #include "Include/Analysis/CRSIDivergence.mqh"
 
+//--- Include Trade Manager
+#include "Include/Config/TradingConfig.mqh"
+#include "Include/Trading/ChimeraTradeManager.mqh"
 //+------------------------------------------------------------------+
 //| Global Variables                                                  |
 //+------------------------------------------------------------------+
@@ -62,6 +65,21 @@ int OnInit() {
       Print("ERROR: Failed to initialize analyzers");
       return INIT_FAILED;
    }
+
+   // Initialize config with defaults
+   CTradingConfig::InitializeDefaults(g_trading_config);
+   
+   // Validate configuration
+   if(!CTradingConfig::ValidateConfig(g_trading_config)) {
+      return INIT_PARAMETERS_INCORRECT;
+   }
+   
+   // Print summary to log
+   CTradingConfig::PrintConfigSummary(g_trading_config);
+   
+   // Create trade manager
+   g_trade_manager = new CChimeraTradeManager(g_trading_config);
+   
 
    //--- Print Configuration Summary
    PrintConfigurationSummary();
