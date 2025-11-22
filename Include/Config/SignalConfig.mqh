@@ -106,12 +106,12 @@ class CSignalConfig {
       m_correlation.symbol1_index = 0;  // Index 0 = XAUUSDm (primary)
       m_correlation.symbol2_index = 2;  // Index 2 = DXYm (correlation filter)
       m_correlation.timeframe = PERIOD_M5;
-      m_correlation.period = 50;
+      m_correlation.period = 14;  // 50;
       m_correlation.threshold = -0.6;
       m_correlation.strong_threshold = -0.7;
 
       //--- Trend Filter Settings ---
-      m_trend.enabled = true;
+      m_trend.enabled = false;
       m_trend.symbol = "XAUUSDm";
       m_trend.ema_period = 200;
       m_trend.ema_buffer_pips = 50;
@@ -119,7 +119,7 @@ class CSignalConfig {
       m_trend.adx_threshold = 25;
 
       //--- Session/Spread Filter Settings ---
-      m_filters.session_filter_enabled = true;
+      m_filters.session_filter_enabled = false;
       m_filters.spread_filter_enabled = true;
       m_filters.london_start_hour = 8;
       m_filters.london_end_hour = 17;

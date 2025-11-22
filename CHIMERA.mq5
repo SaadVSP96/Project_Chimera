@@ -18,6 +18,10 @@
 #include "Include/Analysis/CCorrelationAnalyzer.mqh"
 #include "Include/Analysis/CRSIDivergence.mqh"
 
+//--- Include Trade Manager
+#include "Include/Config/TradingConfig.mqh"
+#include "Include/Trading/ChimeraTradeManager.mqh"
+
 //+------------------------------------------------------------------+
 //| Global Variables                                                  |
 //+------------------------------------------------------------------+
@@ -27,11 +31,17 @@ CSignalState* g_signal_state = NULL;
 
 // Configuration
 CSignalConfig* g_signal_config = NULL;
+CTradingConfig* g_trading_config = NULL;
 
 // Analyzers
 CRSIDivergence* g_rsi_divergence = NULL;
 CCorrelationAnalyzer* g_correlation = NULL;
 
+// Trade Manager
+CChimeraTradeManager* g_trade_manager = NULL;
+
+int g_atr_handle = INVALID_HANDLE;
+bool g_atr_initialized = false;
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
 //+------------------------------------------------------------------+
@@ -42,7 +52,7 @@ int OnInit() {
 
    //--- Step 1: Initialize Configuration
    g_signal_config = new CSignalConfig();
-
+   g_trading_config = new CTradingConfig();
    //--- Step 2: Initialize Data Manager (Singleton)
    g_data_manager = CMarketDataManager::GetInstance();
    if (g_data_manager == NULL) {
@@ -63,6 +73,31 @@ int OnInit() {
       return INIT_FAILED;
    }
 
+   // Validate
+   if (!g_trading_config.ValidateConfig()) {
+      return INIT_PARAMETERS_INCORRECT;
+   }
+
+   // Print summary
+   g_trading_config.PrintConfigSummary();
+
+   // Get flat config and pass to trade manager
+   ChimeraConfig cfg = g_trading_config.GetConfig();
+   g_trade_manager = new CChimeraTradeManager(cfg);
+
+   //--- ATR Handle will be initialized on first tick (deferred initialization)
+   //--- This avoids issues with backtesting where data isn't ready during OnInit
+   string atr_sym = g_trading_config.GetTradeSymbol();
+   int atr_period = g_trading_config.GetATRPeriod();
+
+   // Ensure symbol is selected in Market Watch
+   if (!SymbolSelect(atr_sym, true)) {
+      Print("WARNING: Could not select ", atr_sym, " in Market Watch - will retry on tick");
+   }
+
+   Print("ATR indicator will be initialized for ", atr_sym, " M15 period ", atr_period, " on first tick");
+   g_atr_initialized = false;
+
    //--- Print Configuration Summary
    PrintConfigurationSummary();
 
@@ -71,6 +106,97 @@ int OnInit() {
    Print("═══════════════════════════════════════════════════════");
 
    return INIT_SUCCEEDED;
+}
+
+//+------------------------------------------------------------------+
+//| Initialize ATR indicator (deferred)                               |
+//+------------------------------------------------------------------+
+bool InitializeATR() {
+   if (g_atr_initialized && g_atr_handle != INVALID_HANDLE)
+      return true;
+
+   string atr_sym = g_trading_config.GetTradeSymbol();
+   int atr_period = g_trading_config.GetATRPeriod();
+
+   // Ensure symbol is in Market Watch
+   if (!SymbolSelect(atr_sym, true)) {
+      Print("WARNING: Symbol ", atr_sym, " not available");
+      return false;
+   }
+
+   // Check if we have enough bars
+   int bars = Bars(atr_sym, PERIOD_M15);
+   if (bars < atr_period + 10) {
+      Print("WARNING: Not enough bars for ATR calculation. Have: ", bars, ", Need: ", atr_period + 10);
+      return false;
+   }
+
+   // Create ATR handle
+   g_atr_handle = iATR(atr_sym, PERIOD_M15, atr_period);
+   if (g_atr_handle == INVALID_HANDLE) {
+      Print("WARNING: Failed to create ATR handle for ", atr_sym, " M15 - Error: ", GetLastError());
+      return false;
+   }
+
+   // Wait for indicator to calculate (important for backtesting)
+   int wait_count = 0;
+   while (BarsCalculated(g_atr_handle) <= 0 && wait_count < 10) {
+      Sleep(10);
+      wait_count++;
+   }
+
+   if (BarsCalculated(g_atr_handle) <= 0) {
+      Print("WARNING: ATR indicator not yet calculated");
+      IndicatorRelease(g_atr_handle);
+      g_atr_handle = INVALID_HANDLE;
+      return false;
+   }
+
+   g_atr_initialized = true;
+   Print("ATR handle successfully created for ", atr_sym, " M15 period ", atr_period);
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Get ATR value using handle or fallback calculation                |
+//+------------------------------------------------------------------+
+double GetATRValue(string symbol, int period, int shift = 0) {
+   // Try using the indicator handle first
+   if (g_atr_handle != INVALID_HANDLE) {
+      double atr_buffer[];
+      ArraySetAsSeries(atr_buffer, true);
+
+      if (CopyBuffer(g_atr_handle, 0, shift, 1, atr_buffer) == 1) {
+         return atr_buffer[0];
+      } else {
+         Print("WARNING: CopyBuffer failed for ATR, using manual calculation");
+      }
+   }
+
+   // Fallback: Manual ATR calculation
+   double high[], low[], close[];
+   ArraySetAsSeries(high, true);
+   ArraySetAsSeries(low, true);
+   ArraySetAsSeries(close, true);
+
+   int bars_needed = period + shift + 1;
+
+   if (CopyHigh(symbol, PERIOD_M15, shift, bars_needed, high) != bars_needed ||
+       CopyLow(symbol, PERIOD_M15, shift, bars_needed, low) != bars_needed ||
+       CopyClose(symbol, PERIOD_M15, shift, bars_needed, close) != bars_needed) {
+      Print("WARNING: Failed to copy price data for manual ATR calculation");
+      return 0.0;
+   }
+
+   double sum_tr = 0.0;
+   for (int k = 0; k < period; k++) {
+      double tr1 = high[k] - low[k];
+      double tr2 = MathAbs(high[k] - close[k + 1]);
+      double tr3 = MathAbs(low[k] - close[k + 1]);
+      sum_tr += MathMax(tr1, MathMax(tr2, tr3));
+   }
+
+   return sum_tr / period;
 }
 
 //+------------------------------------------------------------------+
@@ -120,6 +246,13 @@ void OnDeinit(const int reason) {
    Print("  Reason: ", GetDeinitReasonText(reason));
    Print("═══════════════════════════════════════════════════════");
 
+   //--- Release ATR handle
+   if (g_atr_handle != INVALID_HANDLE) {
+      IndicatorRelease(g_atr_handle);
+      g_atr_handle = INVALID_HANDLE;
+   }
+   g_atr_initialized = false;
+
    //--- Cleanup analyzers first
    if (g_rsi_divergence != NULL) {
       delete g_rsi_divergence;
@@ -137,6 +270,18 @@ void OnDeinit(const int reason) {
       g_signal_config = NULL;
    }
 
+   //--- Cleanup trade manager
+   if (g_trade_manager != NULL) {
+      delete g_trade_manager;
+      g_trade_manager = NULL;
+   }
+
+   //--- Cleanup trading config
+   if (g_trading_config != NULL) {
+      delete g_trading_config;
+      g_trading_config = NULL;
+   }
+
    //--- Cleanup singletons last
    CSignalState::Destroy();
    CMarketDataManager::Destroy();
@@ -149,6 +294,11 @@ void OnDeinit(const int reason) {
 //| Expert tick function                                              |
 //+------------------------------------------------------------------+
 void OnTick() {
+   //--- Step 0: Initialize ATR if not yet done (deferred initialization)
+   if (!g_atr_initialized) {
+      InitializeATR();
+   }
+
    //--- Step 1: Update all market data
    if (!g_data_manager.UpdateAll()) {
       Print("WARNING: Failed to update market data");
@@ -161,13 +311,34 @@ void OnTick() {
    //--- Step 3: Run all active analyzers
    RunAnalyzers();
 
-   //--- Step 4: Calculate confluence score
-   int score = CalculateConfluenceScore();
+   //--- Step 4: Trade Logic Integration (RSI Divergence + Correlation only)
+   SRSIDivergenceResult rsi_res = g_signal_state.GetRSI();
+   SCorrelationResult corr_res = g_signal_state.GetCorrelation();
 
-   //--- Step 5: Trade decision block (future implementation)
-   // if(score >= 3 && g_signal_state.PassesFilters()) {
-   //     ExecuteTrade();
-   // }
+   string sym = g_trading_config.GetTradeSymbol();
+   int atr_period = g_trading_config.GetATRPeriod();
+
+   // Get ATR using the proper function (handle or fallback)
+   double atr = GetATRValue(sym, atr_period);
+
+   // if (atr > 0.0 && corr_res.meets_threshold)
+   if (atr > 0.0 && rsi_res.detected && corr_res.meets_threshold) {
+      ENUM_ORDER_TYPE ord_type = rsi_res.is_bullish ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      double entry_price = (ord_type == ORDER_TYPE_BUY) ? SymbolInfoDouble(sym, SYMBOL_ASK) : SymbolInfoDouble(sym, SYMBOL_BID);
+      STradeManagementConfig tm_cfg = g_trading_config.GetTradeManagementConfig();
+      double sl_dist = tm_cfg.sl_atr_mult * atr;
+      double sl_price = (ord_type == ORDER_TYPE_BUY) ? entry_price - sl_dist : entry_price + sl_dist;
+      int conf_score = 2 + (corr_res.is_strong ? 1 : 0);
+      datetime now_time = TimeCurrent();
+      g_trade_manager.ExecuteEntry(ord_type, sl_price, conf_score, corr_res.value, now_time);
+   }
+
+   //--- Step 5: Manage existing positions
+   if (atr > 0.0) {
+      datetime now_time = TimeCurrent();
+      g_trade_manager.ManagePositions(atr, corr_res.value, now_time, now_time);
+      g_trade_manager.ManageTrailingStop(atr, now_time);
+   }
 
    //--- Step 6: Display status (throttled)
    static datetime last_display = 0;
@@ -269,6 +440,14 @@ void DisplayStatus() {
                       EnumToString(rsi_cfg.timeframe),
                       close,
                       TimeToString(time, TIME_DATE | TIME_MINUTES)));
+
+   //--- ATR Status
+   string sym = g_trading_config.GetTradeSymbol();
+   int atr_period = g_trading_config.GetATRPeriod();
+   double current_atr = GetATRValue(sym, atr_period);
+   Print(StringFormat("ATR (%s M15, %d): %.5f | Handle: %s",
+                      sym, atr_period, current_atr,
+                      g_atr_initialized ? "Active" : "Fallback"));
 
    //--- RSI Status
    if (g_rsi_divergence != NULL && g_rsi_divergence.IsInitialized()) {
