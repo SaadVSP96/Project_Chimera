@@ -4,7 +4,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Quantech Innovation"
 #property link "https://quantechinnovation.com"
-#property version "1.20"
+#property version "1.30"
 
 //--- Include Configuration
 #include "Include/Config/MarketDataConfig.mqh"
@@ -16,6 +16,7 @@
 
 //--- Include Analyzers
 #include "Include/Analysis/CCorrelationAnalyzer.mqh"
+#include "Include/Analysis/CHarmonicPatterns.mqh"
 #include "Include/Analysis/CRSIDivergence.mqh"
 
 //--- Include Trade Manager
@@ -36,18 +37,19 @@ CTradingConfig* g_trading_config = NULL;
 // Analyzers
 CRSIDivergence* g_rsi_divergence = NULL;
 CCorrelationAnalyzer* g_correlation = NULL;
-
+CHarmonicPatterns* g_harmonic = NULL;
 // Trade Manager
 CChimeraTradeManager* g_trade_manager = NULL;
 
 int g_atr_handle = INVALID_HANDLE;
 bool g_atr_initialized = false;
+bool g_is_new_bar = false;
 //+------------------------------------------------------------------+
 //| Expert initialization function                                    |
 //+------------------------------------------------------------------+
 int OnInit() {
    Print("═══════════════════════════════════════════════════════");
-   Print("  CHIMERA v1.2 - Pattern Detection System");
+   Print("  CHIMERA v1.3 - Pattern Detection System");
    Print("═══════════════════════════════════════════════════════");
 
    //--- Step 1: Initialize Configuration
@@ -231,8 +233,19 @@ bool InitializeAnalyzers() {
       Print("Correlation analyzer initialized");
    }
 
-   // Future: Add other analyzers here
-   // if(g_signal_config.IsTrendEnabled()) { ... }
+   //--- Harmonic Patterns
+   if (g_signal_config.IsHarmonicEnabled()) {
+      g_harmonic = new CHarmonicPatterns();
+
+      SHarmonicConfig harm_config = g_signal_config.GetHarmonicConfig();
+
+      if (!g_harmonic.Initialize(g_data_manager, harm_config)) {
+         Print("ERROR: Failed to initialize CHarmonicPatterns");
+         return false;
+      }
+
+      Print("Harmonic patterns analyzer initialized");
+   }
 
    return true;
 }
@@ -264,6 +277,10 @@ void OnDeinit(const int reason) {
       g_correlation = NULL;
    }
 
+   if (g_harmonic != NULL) {
+      delete g_harmonic;
+      g_harmonic = NULL;
+   }
    //--- Cleanup configuration
    if (g_signal_config != NULL) {
       delete g_signal_config;
@@ -289,58 +306,107 @@ void OnDeinit(const int reason) {
    g_signal_state = NULL;
    g_data_manager = NULL;
 }
-
 //+------------------------------------------------------------------+
 //| Expert tick function                                              |
 //+------------------------------------------------------------------+
 void OnTick() {
-   //--- Step 0: Initialize ATR if not yet done (deferred initialization)
+   //--- Step 0: Detect new bar (for analyzers that need it)
+   static datetime last_bar_time = 0;
+   datetime current_bar_time = iTime(_Symbol, PERIOD_M1, 0);
+   g_is_new_bar = (current_bar_time != last_bar_time);
+   if (g_is_new_bar) {
+      last_bar_time = current_bar_time;
+   }
+
+   //--- Step 1: Initialize ATR if not yet done (deferred initialization)
    if (!g_atr_initialized) {
       InitializeATR();
    }
 
-   //--- Step 1: Update all market data
+   //--- Step 2: Update all market data
    if (!g_data_manager.UpdateAll()) {
       Print("WARNING: Failed to update market data");
       return;
    }
 
-   //--- Step 2: Reset signal state for this tick
+   //--- Step 3: Reset signal state for this tick
    g_signal_state.ResetAll();
 
-   //--- Step 3: Run all active analyzers
+   //--- Step 4: Run all active analyzers
    RunAnalyzers();
 
-   //--- Step 4: Trade Logic Integration (RSI Divergence + Correlation only)
+   //--- Step 5: Calculate Confluence Score
+   int confluence_score = CalculateConfluenceScore();
+
+   //--- Step 6: Trade Entry Logic (Confluence-Based)
    SRSIDivergenceResult rsi_res = g_signal_state.GetRSI();
    SCorrelationResult corr_res = g_signal_state.GetCorrelation();
+   SHarmonicPatternResult harm_res = g_signal_state.GetHarmonic();
 
    string sym = g_trading_config.GetTradeSymbol();
    int atr_period = g_trading_config.GetATRPeriod();
-
-   // Get ATR using the proper function (handle or fallback)
    double atr = GetATRValue(sym, atr_period);
 
-   // if (atr > 0.0 && corr_res.meets_threshold)
-   if (atr > 0.0 && rsi_res.detected && corr_res.meets_threshold) {
-      ENUM_ORDER_TYPE ord_type = rsi_res.is_bullish ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
-      double entry_price = (ord_type == ORDER_TYPE_BUY) ? SymbolInfoDouble(sym, SYMBOL_ASK) : SymbolInfoDouble(sym, SYMBOL_BID);
-      STradeManagementConfig tm_cfg = g_trading_config.GetTradeManagementConfig();
-      double sl_dist = tm_cfg.sl_atr_mult * atr;
-      double sl_price = (ord_type == ORDER_TYPE_BUY) ? entry_price - sl_dist : entry_price + sl_dist;
-      int conf_score = 2 + (corr_res.is_strong ? 1 : 0);
-      datetime now_time = TimeCurrent();
-      g_trade_manager.ExecuteEntry(ord_type, sl_price, conf_score, corr_res.value, now_time);
+   // Check if we meet minimum confluence requirements
+   int min_score = g_signal_config.GetMinConfluenceScore();
+   bool has_base = g_signal_state.HasBaseSignal();  // RSI or Harmonic
+   bool require_base = g_signal_config.RequiresBaseSignal();
+
+   if (atr > 0.0 && confluence_score >= min_score && (!require_base || has_base)) {
+      // Determine trade direction from active signals
+      bool trade_signal = false;
+      bool is_bullish = false;
+
+      // Priority 1: Harmonic patterns (if any triggered)
+      if (harm_res.any_pattern_detected && harm_res.GetTriggeredCount() > 0) {
+         trade_signal = true;
+         is_bullish = harm_res.is_bullish;
+         Print("═══ TRADE SIGNAL: HARMONIC PATTERN ═══");
+         Print("  Direction: ", is_bullish ? "BULLISH" : "BEARISH");
+         Print("  Triggered Patterns: ", harm_res.GetTriggeredCount());
+         Print("  Confluence Score: ", confluence_score, "/9");
+      }
+      // Priority 2: RSI Divergence
+      else if (rsi_res.detected) {
+         trade_signal = true;
+         is_bullish = rsi_res.is_bullish;
+         Print("═══ TRADE SIGNAL: RSI DIVERGENCE ═══");
+         Print("  Direction: ", is_bullish ? "BULLISH" : "BEARISH");
+         Print("  Confluence Score: ", confluence_score, "/9");
+      }
+
+      // Execute trade if we have a signal
+      if (trade_signal) {
+         ENUM_ORDER_TYPE ord_type = is_bullish ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+         double entry_price = (ord_type == ORDER_TYPE_BUY) ? SymbolInfoDouble(sym, SYMBOL_ASK) : SymbolInfoDouble(sym, SYMBOL_BID);
+
+         // Calculate stop loss
+         STradeManagementConfig tm_cfg = g_trading_config.GetTradeManagementConfig();
+         double sl_dist = tm_cfg.sl_atr_mult * atr;
+         double sl_price = (ord_type == ORDER_TYPE_BUY) ? entry_price - sl_dist : entry_price + sl_dist;
+
+         // Execute entry with confluence score
+         datetime now_time = TimeCurrent();
+         g_trade_manager.ExecuteEntry(ord_type, sl_price, confluence_score,
+                                      corr_res.value, now_time);
+
+         Print("  ATR: ", DoubleToString(atr, 5));
+         Print("  Entry: ", DoubleToString(entry_price, _Digits));
+         Print("  Stop Loss: ", DoubleToString(sl_price, _Digits));
+         Print("  Risk: ", DoubleToString(sl_dist, _Digits), " (",
+               DoubleToString(tm_cfg.sl_atr_mult, 1), "× ATR)");
+         Print("═══════════════════════════════════");
+      }
    }
 
-   //--- Step 5: Manage existing positions
+   //--- Step 7: Manage existing positions
    if (atr > 0.0) {
       datetime now_time = TimeCurrent();
       g_trade_manager.ManagePositions(atr, corr_res.value, now_time, now_time);
       g_trade_manager.ManageTrailingStop(atr, now_time);
    }
 
-   //--- Step 6: Display status (throttled)
+   //--- Step 8: Display status (throttled)
    static datetime last_display = 0;
    if (TimeCurrent() - last_display >= 10) {
       DisplayStatus();
@@ -389,7 +455,39 @@ void RunAnalyzers() {
          last_logged_corr = corr_result.value;
       }
    }
+   //--- Harmonic Patterns
+   if (g_harmonic != NULL && g_harmonic.IsInitialized()) {
+      g_harmonic.Update(g_is_new_bar);
 
+      SHarmonicPatternResult harm_result;
+      g_harmonic.Analyze(harm_result);
+      g_signal_state.SetHarmonic(harm_result);
+
+      // Log when patterns trigger
+      if (harm_result.gartley.D_triggered) {
+         Print("══════ GARTLEY TRIGGERED ══════");
+         Print("  Projected D Price: ", DoubleToString(harm_result.gartley.D_price, 2));
+         Print("═══════════════════════════════");
+      }
+
+      if (harm_result.bat.D_triggered) {
+         Print("══════ BAT TRIGGERED ══════");
+         Print("  Projected D Price: ", DoubleToString(harm_result.bat.D_price, 2));
+         Print("═══════════════════════════");
+      }
+
+      if (harm_result.abcd.D_triggered) {
+         Print("══════ ABCD TRIGGERED ══════");
+         Print("  Projected D Price: ", DoubleToString(harm_result.abcd.D_price, 2));
+         Print("═══════════════════════════");
+      }
+
+      if (harm_result.cypher.D_triggered) {
+         Print("══════ CYPHER TRIGGERED ══════");
+         Print("  Projected D Price: ", DoubleToString(harm_result.cypher.D_price, 2));
+         Print("══════════════════════════════");
+      }
+   }
    // Future: Add other analyzers
    // if(g_trend != NULL) { g_trend.Analyze(...); }
 }
@@ -400,26 +498,31 @@ void RunAnalyzers() {
 int CalculateConfluenceScore() {
    int score = 0;
 
-   // 1. Base signal (RSI or Harmonic)
-   if (g_signal_state.HasBaseSignal())
+   // 1. RSI Base signal (1 point)
+   if (g_signal_state.GetRSI().detected)
       score++;
 
-   // 2. DXY Correlation < -0.6
+   // 2-5. Harmonic patterns (1 point each, max 4 points)
+   SHarmonicPatternResult harm = g_signal_state.GetHarmonic();
+   score += harm.GetTriggeredCount();
+
+   // 6. DXY Correlation Valid: < -0.6 (1 point)
    if (g_signal_state.HasValidCorrelation())
       score++;
 
-   // 3. Harmonic pattern when RSI is base (future)
-   // if(has_harmonic && has_rsi) score++;
-
-   // 4. Strong correlation < -0.7
+   // 7. DXY Correlation Strong: < -0.7 (1 point)
    if (g_signal_state.HasStrongCorrelation())
       score++;
 
-   // 5. All timeframes aligned
+   // 8. Trend alignment (1 point) - FUTURE
    if (g_signal_state.IsTrendAligned())
       score++;
 
-   return score;
+   // 9. Filters passed (1 point) - FUTURE
+   if (g_signal_state.PassesFilters())
+      score++;
+
+   return score;  // Max score = 9
 }
 
 //+------------------------------------------------------------------+
@@ -468,16 +571,58 @@ void DisplayStatus() {
                          corr.is_strong ? "YES" : "NO",
                          corr.signal_boost));
    }
+   //--- Harmonic Pattern Status
+   if (g_harmonic != NULL && g_harmonic.IsInitialized()) {
+      SHarmonicPatternResult harm = g_signal_state.GetHarmonic();
 
+      if (harm.XABCD_structure_valid) {
+         Print(StringFormat("Harmonic [%s]: %s | Pivots: %d | Monitoring: %s",
+                            g_harmonic.GetSymbol(),
+                            harm.is_bullish ? "BULLISH" : "BEARISH",
+                            g_harmonic.GetPivotCount(),
+                            harm.any_pattern_detected ? "YES" : "NO"));
+
+         if (harm.gartley.waiting_for_D || harm.gartley.D_triggered) {
+            Print(StringFormat("  Gartley D: %.2f | Hit: %s",
+                               harm.gartley.D_price,
+                               harm.gartley.D_triggered ? "YES" : "waiting"));
+         }
+
+         if (harm.bat.waiting_for_D || harm.bat.D_triggered) {
+            Print(StringFormat("  Bat D: %.2f | Hit: %s",
+                               harm.bat.D_price,
+                               harm.bat.D_triggered ? "YES" : "waiting"));
+         }
+
+         if (harm.abcd.waiting_for_D || harm.abcd.D_triggered) {
+            Print(StringFormat("  ABCD D: %.2f | Hit: %s",
+                               harm.abcd.D_price,
+                               harm.abcd.D_triggered ? "YES" : "waiting"));
+         }
+
+         if (harm.cypher.waiting_for_D || harm.cypher.D_triggered) {
+            Print(StringFormat("  Cypher D: %.2f | Hit: %s",
+                               harm.cypher.D_price,
+                               harm.cypher.D_triggered ? "YES" : "waiting"));
+         }
+      } else {
+         Print(StringFormat("Harmonic [%s]: No active patterns | Pivots: %d",
+                            g_harmonic.GetSymbol(),
+                            g_harmonic.GetPivotCount()));
+      }
+   }
    //--- Signal State
    SRSIDivergenceResult rsi = g_signal_state.GetRSI();
    Print(StringFormat("RSI Divergence: %s | Direction: %s",
                       rsi.detected ? "DETECTED" : "None",
                       rsi.is_bullish ? "BULLISH" : (rsi.detected ? "BEARISH" : "N/A")));
 
-   //--- Confluence Score
+   //--- Confluence Score (with threshold info)
    int score = CalculateConfluenceScore();
-   Print(StringFormat("Confluence Score: %d/5", score));
+   int min_score = g_signal_config.GetMinConfluenceScore();
+   string score_status = (score >= min_score) ? "READY" : "BELOW MIN";
+   Print(StringFormat("Confluence Score: %d/9 (Min: %d) | Status: %s",
+                      score, min_score, score_status));
 
    Print("═══════════════════════════════════════════════════════\n");
 }
@@ -512,8 +657,38 @@ void PrintConfigurationSummary() {
                          corr.threshold, corr.strong_threshold));
    }
 
+   SHarmonicConfig harm = g_signal_config.GetHarmonicConfig();
+   Print(StringFormat("Harmonic Patterns: %s", harm.enabled ? "ENABLED" : "DISABLED"));
+   if (harm.enabled) {
+      string sym = g_data_manager.GetSymbolName(harm.symbol_index);
+      Print(StringFormat("  Symbol: %s (idx %d) | TF: %s",
+                         sym, harm.symbol_index, EnumToString(harm.timeframe)));
+      Print(StringFormat("  Pivot Strength: L=%d R=%d | Max Pivots: %d",
+                         harm.pivot_left, harm.pivot_right, harm.max_pivots));
+      Print(StringFormat("  PRZ Tolerance: %.1f pips | Ratio Tolerance: ±%.1f%%",
+                         harm.prz_tolerance_pips, harm.ratio_tolerance * 100));
+      Print(StringFormat("  Patterns: %s%s%s%s",
+                         harm.patterns[0].enabled ? "Gartley " : "",
+                         harm.patterns[1].enabled ? "Bat " : "",
+                         harm.patterns[2].enabled ? "ABCD " : "",
+                         harm.patterns[3].enabled ? "Cypher" : ""));
+   }
+
    STrendConfig trend = g_signal_config.GetTrendConfig();
    Print(StringFormat("Trend Filter: %s", trend.enabled ? "ENABLED" : "DISABLED"));
+
+   SSignalGlobalConfig global = g_signal_config.GetGlobalConfig();
+   Print("─────────────────────────────────────────────────────");
+   Print("Global Signal Settings:");
+   Print(StringFormat("  Minimum Confluence Score: %d/9", global.min_confluence_score));
+   Print(StringFormat("  Require Base Signal: %s", global.require_base_signal ? "YES" : "NO"));
+   Print("  Max Possible Score: 9 points");
+   Print("    - RSI Divergence: 1 point");
+   Print("    - Harmonic Patterns: 4 points (1 per pattern)");
+   Print("    - Correlation Valid: 1 point");
+   Print("    - Correlation Strong: 1 point");
+   Print("    - Trend Aligned: 1 point");
+   Print("    - Filters Passed: 1 point");
 
    Print("─────────────────────────────────────────────────────");
 }

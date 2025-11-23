@@ -3,7 +3,8 @@
 //| Manages OHLCT buffers for one symbol on one timeframe            |
 //+------------------------------------------------------------------+
 class CTimeframeData {
-  private:
+   //   private:
+  public:
    // Identification
    string m_symbol;
    ENUM_TIMEFRAMES m_timeframe;

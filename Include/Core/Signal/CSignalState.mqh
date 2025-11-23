@@ -6,6 +6,7 @@ class CSignalState {
 
    SRSIDivergenceResult m_rsi;
    SCorrelationResult m_correlation;
+   SHarmonicPatternResult m_harmonic;
    STrendResult m_trend;
    SFilterResult m_filters;
    datetime m_last_update;
@@ -42,6 +43,7 @@ class CSignalState {
    void ResetAll(void) {
       ResetRSI();
       ResetCorrelation();
+      ResetHarmonic();
       ResetTrend();
       ResetFilters();
       m_last_update = 0;
@@ -57,6 +59,10 @@ class CSignalState {
       m_correlation.meets_threshold = false;
       m_correlation.is_strong = false;
       m_correlation.signal_boost = 1.0;
+   }
+
+   void ResetHarmonic(void) {
+      m_harmonic.Reset();
    }
 
    void ResetTrend(void) {
@@ -84,6 +90,11 @@ class CSignalState {
       m_last_update = TimeCurrent();
    }
 
+   void SetHarmonic(const SHarmonicPatternResult& result) {
+      m_harmonic = result;
+      m_last_update = TimeCurrent();
+   }
+
    void SetTrend(const STrendResult& result) {
       m_trend = result;
       m_last_update = TimeCurrent();
@@ -103,6 +114,10 @@ class CSignalState {
       return m_correlation;
    }
 
+   SHarmonicPatternResult GetHarmonic(void) const {
+      return m_harmonic;
+   }
+
    STrendResult GetTrend(void) const {
       return m_trend;
    }
@@ -117,7 +132,7 @@ class CSignalState {
 
    // Convenience booleans for scoring
    bool HasBaseSignal(void) const {
-      return m_rsi.detected;
+      return m_rsi.detected || m_harmonic.any_pattern_detected;
    }
 
    bool HasValidCorrelation(void) const {

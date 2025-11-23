@@ -6,6 +6,17 @@
 #property link "https://quantechinnovation.com"
 
 //+------------------------------------------------------------------+
+//| Global Signal Settings                                            |
+//+------------------------------------------------------------------+
+struct SSignalGlobalConfig {
+   int min_confluence_score;  // Minimum score to take trades
+   bool require_base_signal;  // Must have RSI or Harmonic before trading
+
+   // Default constructor
+   SSignalGlobalConfig() : min_confluence_score(3), require_base_signal(true) {}
+};
+
+//+------------------------------------------------------------------+
 //| RSI Divergence Configuration Structure                           |
 //+------------------------------------------------------------------+
 struct SRSIConfig {
@@ -32,6 +43,48 @@ struct SCorrelationConfig {
    int period;               // Rolling window for correlation
    double threshold;         // Minimum correlation for trade (-0.6)
    double strong_threshold;  // Strong correlation for boost (-0.7)
+};
+
+//+------------------------------------------------------------------+
+//| Pattern Ratio Definition (Fibonacci ratios for one pattern)      |
+//+------------------------------------------------------------------+
+struct SPatternRatios {
+   string name;   // "Gartley", "Bat", "ABCD", "Cypher"
+   bool enabled;  // User can enable/disable per pattern
+
+   // Fibonacci ratios with ranges
+   double AB_XA_min, AB_XA_max;
+   double BC_AB_min, BC_AB_max;
+   double CD_BC_min, CD_BC_max;
+   double AD_XA;  // D projection ratio (KEY for PRZ)
+
+   // Default constructor
+   SPatternRatios() : name(""), enabled(false), AB_XA_min(0), AB_XA_max(0), BC_AB_min(0), BC_AB_max(0), CD_BC_min(0), CD_BC_max(0), AD_XA(0) {}
+};
+
+//+------------------------------------------------------------------+
+//| Harmonic Patterns Configuration                                  |
+//+------------------------------------------------------------------+
+struct SHarmonicConfig {
+   bool enabled;               // Master enable/disable
+   int symbol_index;           // Index in MarketDataConfig
+   ENUM_TIMEFRAMES timeframe;  // M15 per spec
+
+   // Pivot detection
+   int pivot_left;   // Bars to left for confirmation
+   int pivot_right;  // Bars to right for confirmation
+   int max_pivots;   // Max pivot buffer size
+
+   // Pattern validation
+   SPatternRatios patterns[4];  // [0]=Gartley, [1]=Bat, [2]=ABCD, [3]=Cypher
+   double ratio_tolerance;      // ±tolerance for ratio matching (e.g., 0.02)
+
+   // PRZ settings
+   double prz_tolerance_pips;  // How close to D = "hit"
+
+   // Invalidation rules
+   bool check_X_break;        // Invalidate if price breaks X
+   int max_pattern_age_bars;  // Max bars to wait for D
 };
 
 //+------------------------------------------------------------------+
@@ -64,8 +117,10 @@ struct SFilterConfig {
 //+------------------------------------------------------------------+
 class CSignalConfig {
   private:
+   SSignalGlobalConfig m_global;
    SRSIConfig m_rsi;
    SCorrelationConfig m_correlation;
+   SHarmonicConfig m_harmonic;
    STrendConfig m_trend;
    SFilterConfig m_filters;
 
@@ -75,20 +130,29 @@ class CSignalConfig {
    }
 
    // Getters
+   int GetMinConfluenceScore(void) const { return m_global.min_confluence_score; }
+   bool RequiresBaseSignal(void) const { return m_global.require_base_signal; }
+   SSignalGlobalConfig GetGlobalConfig(void) const { return m_global; }
    SRSIConfig GetRSIConfig(void) const { return m_rsi; }
    SCorrelationConfig GetCorrelationConfig(void) const { return m_correlation; }
+   SHarmonicConfig GetHarmonicConfig(void) const { return m_harmonic; }
    STrendConfig GetTrendConfig(void) const { return m_trend; }
    SFilterConfig GetFilterConfig(void) const { return m_filters; }
 
    // Check if specific analyzers are enabled
    bool IsRSIEnabled(void) const { return m_rsi.enabled; }
    bool IsCorrelationEnabled(void) const { return m_correlation.enabled; }
+   bool IsHarmonicEnabled(void) const { return m_harmonic.enabled; }
    bool IsTrendEnabled(void) const { return m_trend.enabled; }
    bool IsSessionFilterEnabled(void) const { return m_filters.session_filter_enabled; }
    bool IsSpreadFilterEnabled(void) const { return m_filters.spread_filter_enabled; }
 
   private:
    void InitializeChimeraConfig(void) {
+      //--- Global Signal Settings ---
+      m_global.min_confluence_score = 3;    // Minimum score to trade (out of 9)
+      m_global.require_base_signal = true;  // Must have RSI or Harmonic
+
       //--- RSI Divergence Settings ---
       m_rsi.enabled = true;
       m_rsi.symbol = "XAUUSDm";
@@ -109,6 +173,65 @@ class CSignalConfig {
       m_correlation.period = 14;  // 50;
       m_correlation.threshold = -0.6;
       m_correlation.strong_threshold = -0.7;
+
+      //--- Harmonic Pattern Settings ---
+      m_harmonic.enabled = true;
+      m_harmonic.symbol_index = 0;  // XAUUSDm
+      m_harmonic.timeframe = PERIOD_M15;
+
+      m_harmonic.pivot_left = 5;
+      m_harmonic.pivot_right = 3;
+      m_harmonic.max_pivots = 50;
+
+      m_harmonic.ratio_tolerance = 0.02;  // ±2%
+      m_harmonic.prz_tolerance_pips = 10.0;
+
+      m_harmonic.check_X_break = true;
+      m_harmonic.max_pattern_age_bars = 100;
+
+      //--- Gartley Pattern ---
+      m_harmonic.patterns[0].name = "Gartley";
+      m_harmonic.patterns[0].enabled = true;
+      m_harmonic.patterns[0].AB_XA_min = 0.618 - m_harmonic.ratio_tolerance;
+      m_harmonic.patterns[0].AB_XA_max = 0.618 + m_harmonic.ratio_tolerance;
+      m_harmonic.patterns[0].BC_AB_min = 0.382;
+      m_harmonic.patterns[0].BC_AB_max = 0.886;
+      m_harmonic.patterns[0].CD_BC_min = 1.272;
+      m_harmonic.patterns[0].CD_BC_max = 1.618;
+      m_harmonic.patterns[0].AD_XA = 0.786;
+
+      //--- Bat Pattern ---
+      m_harmonic.patterns[1].name = "Bat";
+      m_harmonic.patterns[1].enabled = true;
+      m_harmonic.patterns[1].AB_XA_min = 0.382;
+      m_harmonic.patterns[1].AB_XA_max = 0.50;
+      m_harmonic.patterns[1].BC_AB_min = 0.382;
+      m_harmonic.patterns[1].BC_AB_max = 0.886;
+      m_harmonic.patterns[1].CD_BC_min = 1.618;
+      m_harmonic.patterns[1].CD_BC_max = 2.618;
+      m_harmonic.patterns[1].AD_XA = 0.886;
+
+      //--- ABCD Pattern ---
+      m_harmonic.patterns[2].name = "ABCD";
+      m_harmonic.patterns[2].enabled = true;
+      m_harmonic.patterns[2].AB_XA_min = 0.0;  // X not used in ratios
+      m_harmonic.patterns[2].AB_XA_max = 999.0;
+      m_harmonic.patterns[2].BC_AB_min = 0.382;
+      m_harmonic.patterns[2].BC_AB_max = 0.886;
+      m_harmonic.patterns[2].CD_BC_min = 1.272;
+      m_harmonic.patterns[2].CD_BC_max = 1.618;
+      m_harmonic.patterns[2].AD_XA = 0.0;  // Not used
+
+      //--- Cypher Pattern ---
+      m_harmonic.patterns[3].name = "Cypher";
+      m_harmonic.patterns[3].enabled = true;
+      m_harmonic.patterns[3].AB_XA_min = 0.382;
+      m_harmonic.patterns[3].AB_XA_max = 0.618;
+      m_harmonic.patterns[3].BC_AB_min = 1.13;
+      m_harmonic.patterns[3].BC_AB_max = 1.414;
+      m_harmonic.patterns[3].CD_BC_min = 0.0;  // Uses XC instead
+      m_harmonic.patterns[3].CD_BC_max = 999.0;
+      m_harmonic.patterns[3].AD_XA = 0.786;  // 0.786 of XC
 
       //--- Trend Filter Settings ---
       m_trend.enabled = false;

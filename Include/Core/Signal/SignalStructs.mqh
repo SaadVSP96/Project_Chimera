@@ -58,12 +58,104 @@ struct SRSIDivergenceResult {
    }
 };
 
-// Correlation result
+//+------------------------------------------------------------------+
+//| Correlation Result                                               |
+//+------------------------------------------------------------------+
 struct SCorrelationResult {
    double value;          // -1.0 to +1.0
    bool meets_threshold;  // < -0.6
    bool is_strong;        // < -0.7
    double signal_boost;   // 1.0 to 1.3
+};
+
+//+------------------------------------------------------------------+
+//| Harmonic Pivot Point                                              |
+//+------------------------------------------------------------------+
+struct SHarmonicPivot {
+   string type;    // "H" or "L"
+   int bar_index;  // Bar shift when detected
+   datetime time;  // Timestamp
+   double price;   // High or Low price
+   bool is_valid;  // Validation flag
+
+   void Reset() {
+      type = "";
+      bar_index = -1;
+      time = 0;
+      price = 0.0;
+      is_valid = false;
+   }
+};
+
+//+------------------------------------------------------------------+
+//| Single Pattern State (one of the 4 harmonic patterns)            |
+//+------------------------------------------------------------------+
+struct SSinglePatternState {
+   bool pattern_valid;  // XABCD ratios match this pattern
+   bool waiting_for_D;  // In monitoring mode for this pattern
+   bool D_triggered;    // Price hit PRZ (MAIN SIGNAL)
+
+   double D_price;  // Projected entry price
+
+   // Ratio validation data
+   double AB_XA_ratio;
+   double BC_AB_ratio;
+   double CD_projected_ratio;
+
+   void Reset() {
+      pattern_valid = false;
+      waiting_for_D = false;
+      D_triggered = false;
+      D_price = 0;
+      AB_XA_ratio = 0;
+      BC_AB_ratio = 0;
+      CD_projected_ratio = 0;
+   }
+};
+
+//+------------------------------------------------------------------+
+//| Harmonic Pattern Result (ALL 4 patterns tracked)                 |
+//+------------------------------------------------------------------+
+struct SHarmonicPatternResult {
+   bool any_pattern_detected;   // At least one pattern valid
+   bool XABCD_structure_valid;  // Pivots form correct sequence
+   bool is_bullish;             // Direction (HLHL or LHLH)
+
+   // The 4 pivots (shared by all patterns)
+   SHarmonicPivot X, A, B, C;
+
+   // Individual pattern states
+   SSinglePatternState gartley;
+   SSinglePatternState bat;
+   SSinglePatternState abcd;
+   SSinglePatternState cypher;
+
+   datetime detection_time;
+
+   // Helper: Count how many patterns triggered
+   int GetTriggeredCount() const {
+      int count = 0;
+      if (gartley.D_triggered) count++;
+      if (bat.D_triggered) count++;
+      if (abcd.D_triggered) count++;
+      if (cypher.D_triggered) count++;
+      return count;
+   }
+
+   void Reset() {
+      any_pattern_detected = false;
+      XABCD_structure_valid = false;
+      is_bullish = false;
+      X.Reset();
+      A.Reset();
+      B.Reset();
+      C.Reset();
+      gartley.Reset();
+      bat.Reset();
+      abcd.Reset();
+      cypher.Reset();
+      detection_time = 0;
+   }
 };
 
 // Trend alignment result
