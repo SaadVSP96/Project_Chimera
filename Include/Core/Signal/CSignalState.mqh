@@ -130,11 +130,6 @@ class CSignalState {
       return m_last_update;
    }
 
-   // Convenience booleans for scoring
-   bool HasBaseSignal(void) const {
-      return m_rsi.detected || m_harmonic.any_pattern_detected;
-   }
-
    bool HasValidCorrelation(void) const {
       return m_correlation.meets_threshold;
    }

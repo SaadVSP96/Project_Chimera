@@ -9,11 +9,11 @@
 //| Global Signal Settings                                            |
 //+------------------------------------------------------------------+
 struct SSignalGlobalConfig {
-   int min_confluence_score;  // Minimum score to take trades
-   bool require_base_signal;  // Must have RSI or Harmonic before trading
+   int min_confluence_score;            // Minimum score to take trades
+   bool require_rsi_divergence_signal;  // Must have RSI or Harmonic before trading
 
    // Default constructor
-   SSignalGlobalConfig() : min_confluence_score(3), require_base_signal(true) {}
+   SSignalGlobalConfig() : min_confluence_score(3), require_rsi_divergence_signal(true) {}
 };
 
 //+------------------------------------------------------------------+
@@ -131,7 +131,7 @@ class CSignalConfig {
 
    // Getters
    int GetMinConfluenceScore(void) const { return m_global.min_confluence_score; }
-   bool RequiresBaseSignal(void) const { return m_global.require_base_signal; }
+   bool RequiresRSIDivergenceSignal(void) const { return m_global.require_rsi_divergence_signal; }
    SSignalGlobalConfig GetGlobalConfig(void) const { return m_global; }
    SRSIConfig GetRSIConfig(void) const { return m_rsi; }
    SCorrelationConfig GetCorrelationConfig(void) const { return m_correlation; }
@@ -150,8 +150,8 @@ class CSignalConfig {
   private:
    void InitializeChimeraConfig(void) {
       //--- Global Signal Settings ---
-      m_global.min_confluence_score = 3;    // Minimum score to trade (out of 9)
-      m_global.require_base_signal = true;  // Must have RSI or Harmonic
+      m_global.min_confluence_score = 3;              // Minimum score to trade (out of 9)
+      m_global.require_rsi_divergence_signal = true;  // Must have RSI or Harmonic
 
       //--- RSI Divergence Settings ---
       m_rsi.enabled = true;
