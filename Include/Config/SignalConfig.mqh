@@ -96,28 +96,28 @@ struct SHarmonicConfig {
 //| Trend Filter Configuration Structure                             |
 //+------------------------------------------------------------------+
 struct TrendFilterConfig {
-   bool     enabled;
-   string   symbol;
+   bool enabled;
+   string symbol;
    ENUM_TIMEFRAMES h4_period;
    ENUM_TIMEFRAMES h1_period;
-   int      ma_period;
-   ENUM_MA_METHOD ma_method;           // CHANGED: Correct enum type
-   ENUM_APPLIED_PRICE ma_price;        // CHANGED: Correct enum type
-   double   buffer_pips;
-   double   strong_trend_threshold_pips;
-   int      adx_period;
-   double   adx_threshold;
-   int      sync_timeout_seconds;
-   int      history_buffer_bars;
-   
+   int ma_period;
+   ENUM_MA_METHOD ma_method;     // CHANGED: Correct enum type
+   ENUM_APPLIED_PRICE ma_price;  // CHANGED: Correct enum type
+   double buffer_pips;
+   double strong_trend_threshold_pips;
+   int adx_period;
+   double adx_threshold;
+   int sync_timeout_seconds;
+   int history_buffer_bars;
+
    TrendFilterConfig(void) {
       enabled = false;
       symbol = "XAUUSDm";
       h4_period = PERIOD_H4;
       h1_period = PERIOD_H1;
       ma_period = 200;
-      ma_method = MODE_EMA;            // Now properly typed
-      ma_price = PRICE_CLOSE;          // Now properly typed
+      ma_method = MODE_EMA;    // Now properly typed
+      ma_price = PRICE_CLOSE;  // Now properly typed
       buffer_pips = 50.0;
       strong_trend_threshold_pips = 100.0;
       adx_period = 14;
@@ -263,7 +263,7 @@ class CSignalConfig {
 
       //--- Trend Filter Settings ---
       // Symbol follows SAME pattern as m_rsi.symbol - explicitly set in InitializeChimeraConfig
-      m_trend.enabled = false;  // Disabled by default per original spec
+      m_trend.enabled = true;      // Disabled by default per original spec
       m_trend.symbol = "XAUUSDm";  // Explicitly set like m_rsi.symbol = "XAUUSDm";
       // All other parameters use TrendFilterConfig() constructor defaults:
       // h4_period=PERIOD_H4, ma_period=200, buffer_pips=50.0, adx_threshold=25.0, etc.

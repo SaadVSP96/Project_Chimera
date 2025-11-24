@@ -18,6 +18,7 @@
 #include "Include/Analysis/CCorrelationAnalyzer.mqh"
 #include "Include/Analysis/CHarmonicPatterns.mqh"
 #include "Include/Analysis/CRSIDivergence.mqh"
+#include "Include/Analysis/CTrendFilter.mqh"
 
 //--- Include Trade Manager
 #include "Include/Config/TradingConfig.mqh"
@@ -38,6 +39,7 @@ CTradingConfig* g_trading_config = NULL;
 CRSIDivergence* g_rsi_divergence = NULL;
 CCorrelationAnalyzer* g_correlation = NULL;
 CHarmonicPatterns* g_harmonic = NULL;
+CTrendFilter* g_trend = NULL;
 // Trade Manager
 CChimeraTradeManager* g_trade_manager = NULL;
 
@@ -247,6 +249,19 @@ bool InitializeAnalyzers() {
       Print("Harmonic patterns analyzer initialized");
    }
 
+   //--- Trend Filter
+   if (g_signal_config.IsTrendEnabled()) {
+      TrendFilterConfig harm_config = g_signal_config.GetTrendConfig();
+      g_trend = new CTrendFilter(harm_config);
+
+      if (g_trend == NULL) {
+         Print("ERROR: Failed to initialize CTrendFilter");
+         return false;
+      }
+
+      Print("Trend Filter initialized");
+   }
+
    return true;
 }
 
@@ -280,6 +295,10 @@ void OnDeinit(const int reason) {
    if (g_harmonic != NULL) {
       delete g_harmonic;
       g_harmonic = NULL;
+   }
+   if (g_trend != NULL) {
+      delete g_trend;
+      g_trend = NULL;
    }
    //--- Cleanup configuration
    if (g_signal_config != NULL) {
@@ -341,7 +360,6 @@ void OnTick() {
    //--- Step 6: Trade Entry Logic (Confluence-Based)
    SRSIDivergenceResult rsi_res = g_signal_state.GetRSI();
    SCorrelationResult corr_res = g_signal_state.GetCorrelation();
-   SHarmonicPatternResult harm_res = g_signal_state.GetHarmonic();
 
    string sym = g_trading_config.GetTradeSymbol();
    int atr_period = g_trading_config.GetATRPeriod();
@@ -352,27 +370,26 @@ void OnTick() {
    bool has_rsi_divergence = rsi_res.detected;  // RSI
    bool require_rsi_divergence = g_signal_config.RequiresRSIDivergenceSignal();
 
+   ENUM_TREND_STATE trend_dir = TREND_NONE;
+   if (g_trend) trend_dir = g_trend.GetTrendDirection(0);
+   if (trend_dir == TREND_NONE) return;  // Per spec: NO TRADE in buffer/range
+
    if (atr > 0.0 && confluence_score >= min_score && (!require_rsi_divergence || has_rsi_divergence)) {
       // Determine trade direction from active signals
       bool trade_signal = false;
       bool is_bullish = false;
 
-      // Priority 1: Harmonic patterns (if any triggered)
-      if (harm_res.any_pattern_detected && harm_res.GetTriggeredCount() > 0) {
-         trade_signal = true;
-         is_bullish = harm_res.is_bullish;
-         Print("═══ TRADE SIGNAL: HARMONIC PATTERN ═══");
-         Print("  Direction: ", is_bullish ? "BULLISH" : "BEARISH");
-         Print("  Triggered Patterns: ", harm_res.GetTriggeredCount());
-         Print("  Confluence Score: ", confluence_score);
-      }
-      // Priority 2: RSI Divergence
-      else if (rsi_res.detected) {
+      if (rsi_res.detected) {
          trade_signal = true;
          is_bullish = rsi_res.is_bullish;
          Print("═══ TRADE SIGNAL: RSI DIVERGENCE ═══");
          Print("  Direction: ", is_bullish ? "BULLISH" : "BEARISH");
          Print("  Confluence Score: ", confluence_score);
+      }
+
+      if ((is_bullish && trend_dir != TREND_UP) || (!is_bullish && trend_dir != TREND_DOWN)) {
+         Print("Signal rejected: Mismatches trend direction");
+         trade_signal = false;
       }
 
       // Execute trade if we have a signal
@@ -488,8 +505,13 @@ void RunAnalyzers() {
          Print("══════════════════════════════");
       }
    }
-   // Future: Add other analyzers
-   // if(g_trend != NULL) { g_trend.Analyze(...); }
+   if (g_trend != NULL) {
+      ENUM_TREND_STATE trend_dir = g_trend.GetTrendDirection(0);
+      // Store in signal_state (extend CSignalState.mqh if needed with STrendResult {ENUM_TREND_STATE direction;})
+      // g_signal_state.SetTrend(trend_dir); // Enables existing IsTrendAligned()
+      Print(StringFormat("Trend: %s | H4 Dist: %.1f pips | ADX: %.1f",
+                         EnumToString(trend_dir), g_trend.GetH4DistancePips(), g_trend.GetADXValue()));
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -611,6 +633,11 @@ void DisplayStatus() {
                             g_harmonic.GetPivotCount()));
       }
    }
+   //--- Trend Filter Status
+   if (g_trend) {
+      ENUM_TREND_STATE tdir = g_trend.GetTrendDirection(0);
+      Print(StringFormat("Trend Direction: %s | Status: %s", EnumToString(tdir), g_trend.GetStatusString()));
+   }
    //--- Signal State
    SRSIDivergenceResult rsi = g_signal_state.GetRSI();
    Print(StringFormat("RSI Divergence: %s | Direction: %s",
@@ -674,7 +701,7 @@ void PrintConfigurationSummary() {
                          harm.patterns[3].enabled ? "Cypher" : ""));
    }
 
-   STrendConfig trend = g_signal_config.GetTrendConfig();
+   TrendFilterConfig trend = g_signal_config.GetTrendConfig();
    Print(StringFormat("Trend Filter: %s", trend.enabled ? "ENABLED" : "DISABLED"));
 
    SSignalGlobalConfig global = g_signal_config.GetGlobalConfig();
