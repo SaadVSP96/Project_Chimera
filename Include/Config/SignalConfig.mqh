@@ -133,11 +133,6 @@ struct TrendFilterConfig {
 struct SFilterConfig {
    bool session_filter_enabled;
    bool spread_filter_enabled;
-   int london_start_hour;
-   int london_end_hour;
-   int ny_start_hour;
-   int ny_end_hour;
-   double max_spread_pips;
 };
 
 //+------------------------------------------------------------------+
@@ -271,10 +266,5 @@ class CSignalConfig {
       //--- Session/Spread Filter Settings ---
       m_filters.session_filter_enabled = false;
       m_filters.spread_filter_enabled = true;
-      m_filters.london_start_hour = 8;
-      m_filters.london_end_hour = 17;
-      m_filters.ny_start_hour = 13;
-      m_filters.ny_end_hour = 22;
-      m_filters.max_spread_pips = 25.0;
    }
 };

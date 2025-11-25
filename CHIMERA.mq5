@@ -86,8 +86,9 @@ int OnInit() {
    g_trading_config.PrintConfigSummary();
 
    // Get flat config and pass to trade manager
-   ChimeraConfig cfg = g_trading_config.GetConfig();
-   g_trade_manager = new CChimeraTradeManager(cfg);
+   SFilterConfig filter_config = g_signal_config.GetFilterConfig();
+   ChimeraConfig trade_cfg = g_trading_config.GetConfig();
+   g_trade_manager = new CChimeraTradeManager(trade_cfg, filter_config);
 
    //--- ATR Handle will be initialized on first tick (deferred initialization)
    //--- This avoids issues with backtesting where data isn't ready during OnInit
@@ -372,7 +373,7 @@ void OnTick() {
 
    ENUM_TREND_STATE trend_dir = TREND_NONE;
    if (g_trend) trend_dir = g_trend.GetTrendDirection(0);
-   if (trend_dir == TREND_NONE) return;  // Per spec: NO TRADE in buffer/range
+   // if (trend_dir == TREND_NONE) return;  // Per spec: NO TRADE in buffer/range
 
    if (atr > 0.0 && confluence_score >= min_score && (!require_rsi_divergence || has_rsi_divergence)) {
       // Determine trade direction from active signals
@@ -386,10 +387,11 @@ void OnTick() {
          Print("  Direction: ", is_bullish ? "BULLISH" : "BEARISH");
          Print("  Confluence Score: ", confluence_score);
       }
-
-      if ((is_bullish && trend_dir != TREND_UP) || (!is_bullish && trend_dir != TREND_DOWN)) {
-         Print("Signal rejected: Mismatches trend direction");
-         trade_signal = false;
+      if (g_signal_config.IsTrendEnabled()) {
+         if ((is_bullish && trend_dir != TREND_UP) || (!is_bullish && trend_dir != TREND_DOWN)) {
+            Print("Signal rejected: Mismatches trend direction");
+            trade_signal = false;
+         }
       }
 
       // Execute trade if we have a signal
