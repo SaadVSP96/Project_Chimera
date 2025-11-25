@@ -13,7 +13,7 @@
 //+------------------------------------------------------------------+
 //| RSI Divergence Detector Class                                    |
 //+------------------------------------------------------------------+
-class CRSIDivergence {
+class CRSIDivergenceWPricePivots {
   private:
    //--- Dependencies (injected references)
    CMarketDataManager* m_data;
@@ -24,7 +24,7 @@ class CRSIDivergence {
    int m_rsi_period;
    int m_pivot_left;
    int m_pivot_right;
-   // int m_pivot_tolerance;  // COMMENTED OUT - no longer needed (RSI pivots are anchor points)
+   int m_pivot_tolerance;
    int m_max_divergence_bars;
    double m_rsi_oversold;
    double m_rsi_overbought;
@@ -32,7 +32,8 @@ class CRSIDivergence {
    //--- RSI Indicator Handle
    int m_rsi_handle;
 
-   //--- Pivot Storage (RSI pivots only - price pivots removed)
+   //--- Pivot Storage (rolling history)
+   SPivotPoint m_price_pivots[];
    SPivotPoint m_rsi_pivots[];
    int m_max_pivots;
 
@@ -42,8 +43,8 @@ class CRSIDivergence {
 
   public:
    //--- Constructor / Destructor
-   CRSIDivergence(void);
-   ~CRSIDivergence(void);
+   CRSIDivergenceWPricePivots(void);
+   ~CRSIDivergenceWPricePivots(void);
 
    //--- Initialization (call after CMarketDataManager is ready)
    bool Initialize(CMarketDataManager* data_manager, const SRSIConfig& config);
@@ -53,6 +54,7 @@ class CRSIDivergence {
 
    //--- Accessors
    double GetCurrentRSI(void);
+   int GetPricePivotCount(void) const { return ArraySize(m_price_pivots); }
    int GetRSIPivotCount(void) const { return ArraySize(m_rsi_pivots); }
    bool IsInitialized(void) const { return m_initialized; }
 
@@ -68,6 +70,7 @@ class CRSIDivergence {
    //--- Divergence Detection
    bool DetectBullishDivergence(SRSIDivergenceResult& result);
    bool DetectBearishDivergence(SRSIDivergenceResult& result);
+   bool FindMatchingPricePivot(const SPivotPoint& rsi_pivot, SPivotPoint& price_pivot);
 
    //--- Pivot Management
    void AddPivot(SPivotPoint& arr[], const SPivotPoint& pivot);
@@ -79,20 +82,21 @@ class CRSIDivergence {
 //+------------------------------------------------------------------+
 //| Constructor                                                       |
 //+------------------------------------------------------------------+
-CRSIDivergence::CRSIDivergence(void) {
+CRSIDivergenceWPricePivots::CRSIDivergenceWPricePivots(void) {
    m_data = NULL;
    m_rsi_handle = INVALID_HANDLE;
    m_max_pivots = 50;
    m_last_pivot_check_time = 0;
    m_initialized = false;
 
+   ArrayResize(m_price_pivots, 0);
    ArrayResize(m_rsi_pivots, 0);
 }
 
 //+------------------------------------------------------------------+
 //| Destructor                                                        |
 //+------------------------------------------------------------------+
-CRSIDivergence::~CRSIDivergence(void) {
+CRSIDivergenceWPricePivots::~CRSIDivergenceWPricePivots(void) {
    if (m_rsi_handle != INVALID_HANDLE)
       IndicatorRelease(m_rsi_handle);
 }
@@ -100,10 +104,10 @@ CRSIDivergence::~CRSIDivergence(void) {
 //+------------------------------------------------------------------+
 //| Initialize with data manager and config                           |
 //+------------------------------------------------------------------+
-bool CRSIDivergence::Initialize(CMarketDataManager* data_manager, const SRSIConfig& config) {
+bool CRSIDivergenceWPricePivots::Initialize(CMarketDataManager* data_manager, const SRSIConfig& config) {
    // Validate data manager
    if (data_manager == NULL) {
-      Print("CRSIDivergence: ERROR - Data manager is NULL");
+      Print("CRSIDivergenceWPricePivots: ERROR - Data manager is NULL");
       return false;
    }
 
@@ -115,14 +119,14 @@ bool CRSIDivergence::Initialize(CMarketDataManager* data_manager, const SRSIConf
    m_rsi_period = config.rsi_period;
    m_pivot_left = config.pivot_left;
    m_pivot_right = config.pivot_right;
-   // m_pivot_tolerance = config.pivot_tolerance;  // COMMENTED OUT - no longer needed
+   m_pivot_tolerance = config.pivot_tolerance;
    m_max_divergence_bars = config.max_divergence_bars;
    m_rsi_oversold = config.oversold;
    m_rsi_overbought = config.overbought;
 
    // Verify symbol exists in data manager
    if (m_data.GetSymbol(m_symbol) == NULL) {
-      Print("CRSIDivergence: ERROR - Symbol ", m_symbol, " not found in data manager");
+      Print("CRSIDivergenceWPricePivots: ERROR - Symbol ", m_symbol, " not found in data manager");
       return false;
    }
 
@@ -130,14 +134,14 @@ bool CRSIDivergence::Initialize(CMarketDataManager* data_manager, const SRSIConf
    m_rsi_handle = iRSI(m_symbol, m_timeframe, m_rsi_period, PRICE_CLOSE);
 
    if (m_rsi_handle == INVALID_HANDLE) {
-      Print("CRSIDivergence: ERROR - Failed to create RSI indicator handle");
+      Print("CRSIDivergenceWPricePivots: ERROR - Failed to create RSI indicator handle");
       return false;
    }
 
    ResetPivotArrays();
    m_initialized = true;
 
-   Print("CRSIDivergence: Initialized for ", m_symbol, " ", EnumToString(m_timeframe),
+   Print("CRSIDivergenceWPricePivots: Initialized for ", m_symbol, " ", EnumToString(m_timeframe),
          " RSI(", m_rsi_period, ") Pivots(L:", m_pivot_left, " R:", m_pivot_right, ")");
 
    return true;
@@ -145,9 +149,8 @@ bool CRSIDivergence::Initialize(CMarketDataManager* data_manager, const SRSIConf
 
 //+------------------------------------------------------------------+
 //| Main Analysis - Call each tick                                    |
-//| SIMPLIFIED: Only detects RSI pivots, no price pivot matching      |
 //+------------------------------------------------------------------+
-void CRSIDivergence::Analyze(SRSIDivergenceResult& result) {
+void CRSIDivergenceWPricePivots::Analyze(SRSIDivergenceResult& result) {
    // Reset result
    result.Reset();
 
@@ -160,14 +163,15 @@ void CRSIDivergence::Analyze(SRSIDivergenceResult& result) {
    // - We need pivot_right bars AFTER the candidate to confirm
    int candidate_bar = 1 + m_pivot_right;
 
-   // Detect new pivots (RSI line only)
+   // Detect new pivots
    DetectPivots(candidate_bar);
 
    // Prune old pivots
+   PrunePivots(m_price_pivots, m_max_divergence_bars + 20);
    PrunePivots(m_rsi_pivots, m_max_divergence_bars + 20);
 
    // Need at least 2 pivots to detect divergence
-   if (ArraySize(m_rsi_pivots) < 2)
+   if (ArraySize(m_rsi_pivots) < 2 || ArraySize(m_price_pivots) < 2)
       return;
 
    // Check for bullish divergence first
@@ -189,13 +193,11 @@ void CRSIDivergence::Analyze(SRSIDivergenceResult& result) {
 
 //+------------------------------------------------------------------+
 //| Detect pivots at the candidate bar                                |
-//| RSI PIVOTS ONLY - no price pivots                                 |
-//| RSI pivot acts as anchor point, price values captured directly    |
 //+------------------------------------------------------------------+
-void CRSIDivergence::DetectPivots(int candidate_bar) {
+void CRSIDivergenceWPricePivots::DetectPivots(int candidate_bar) {
    int lookback = candidate_bar + m_pivot_left + 10;
 
-   // Get data from CMarketDataManager
+   // Get price data from CMarketDataManager
    double high[], low[];
    datetime time[];
    double rsi[];
@@ -226,31 +228,49 @@ void CRSIDivergence::DetectPivots(int candidate_bar) {
 
    m_last_pivot_check_time = time[candidate_bar];
 
+   //--- Detect Price Pivot High ---
+   if (IsPivotHigh(candidate_bar, high, lookback)) {
+      SPivotPoint p;
+      p.type = "H";
+      p.bar_index = candidate_bar;
+      p.time = time[candidate_bar];
+      p.price = high[candidate_bar];
+      p.rsi = rsi[candidate_bar];
+      p.is_valid = true;
+      AddPivot(m_price_pivots, p);
+   }
+
+   //--- Detect Price Pivot Low ---
+   if (IsPivotLow(candidate_bar, low, lookback)) {
+      SPivotPoint p;
+      p.type = "L";
+      p.bar_index = candidate_bar;
+      p.time = time[candidate_bar];
+      p.price = low[candidate_bar];
+      p.rsi = rsi[candidate_bar];
+      p.is_valid = true;
+      AddPivot(m_price_pivots, p);
+   }
+
    //--- Detect RSI Pivot High ---
-   // When RSI forms a pivot high, capture:
-   // - RSI value at that bar
-   // - Price HIGH at that same bar (for divergence comparison)
    if (IsPivotHigh(candidate_bar, rsi, lookback)) {
       SPivotPoint p;
       p.type = "H";
       p.bar_index = candidate_bar;
       p.time = time[candidate_bar];
-      p.price = high[candidate_bar];  // Capture price HIGH at RSI pivot bar
+      p.price = high[candidate_bar];
       p.rsi = rsi[candidate_bar];
       p.is_valid = true;
       AddPivot(m_rsi_pivots, p);
    }
 
    //--- Detect RSI Pivot Low ---
-   // When RSI forms a pivot low, capture:
-   // - RSI value at that bar
-   // - Price LOW at that same bar (for divergence comparison)
    if (IsPivotLow(candidate_bar, rsi, lookback)) {
       SPivotPoint p;
       p.type = "L";
       p.bar_index = candidate_bar;
       p.time = time[candidate_bar];
-      p.price = low[candidate_bar];  // Capture price LOW at RSI pivot bar
+      p.price = low[candidate_bar];
       p.rsi = rsi[candidate_bar];
       p.is_valid = true;
       AddPivot(m_rsi_pivots, p);
@@ -260,7 +280,7 @@ void CRSIDivergence::DetectPivots(int candidate_bar) {
 //+------------------------------------------------------------------+
 //| Check if bar is a pivot high                                      |
 //+------------------------------------------------------------------+
-bool CRSIDivergence::IsPivotHigh(int bar, const double& data[], int count) {
+bool CRSIDivergenceWPricePivots::IsPivotHigh(int bar, const double& data[], int count) {
    if (bar + m_pivot_left >= count || bar - m_pivot_right < 0)
       return false;
 
@@ -284,7 +304,7 @@ bool CRSIDivergence::IsPivotHigh(int bar, const double& data[], int count) {
 //+------------------------------------------------------------------+
 //| Check if bar is a pivot low                                       |
 //+------------------------------------------------------------------+
-bool CRSIDivergence::IsPivotLow(int bar, const double& data[], int count) {
+bool CRSIDivergenceWPricePivots::IsPivotLow(int bar, const double& data[], int count) {
    if (bar + m_pivot_left >= count || bar - m_pivot_right < 0)
       return false;
 
@@ -307,15 +327,9 @@ bool CRSIDivergence::IsPivotLow(int bar, const double& data[], int count) {
 
 //+------------------------------------------------------------------+
 //| Detect Bullish Divergence                                         |
-//| Pattern: Price Lower Low && RSI Higher Low                        |
-//| Uses RSI pivots directly - NO price pivot matching                |
-//| Process:                                                           |
-//| 1. Find two most recent RSI Lows (type=="L")                      |
-//| 2. Compare their RSI values: newer > older = Higher Low ✓         |
-//| 3. Compare their PRICE values: newer < older = Lower Low ✓        |
-//| 4. Ensure RSI is in oversold (<30)                                |
+//| Price: Lower Low, RSI: Higher Low                                 |
 //+------------------------------------------------------------------+
-bool CRSIDivergence::DetectBullishDivergence(SRSIDivergenceResult& result) {
+bool CRSIDivergenceWPricePivots::DetectBullishDivergence(SRSIDivergenceResult& result) {
    int rsi_count = ArraySize(m_rsi_pivots);
    if (rsi_count < 2)
       return false;
@@ -346,22 +360,32 @@ bool CRSIDivergence::DetectBullishDivergence(SRSIDivergenceResult& result) {
    if (bars_between > m_max_divergence_bars || bars_between < 3)
       return false;
 
-   //--- Bullish Divergence Conditions ---
-   // Compare RSI values at the two pivot bars
+   // Find matching Price pivots
+   SPivotPoint curr_price, prev_price;
+
+   if (!FindMatchingPricePivot(curr_rsi, curr_price))
+      return false;
+   if (!FindMatchingPricePivot(prev_rsi, prev_price))
+      return false;
+
+   if (curr_price.type != "L" || prev_price.type != "L")
+      return false;
+
+   //--- Bullish Divergence ---
+   // Price: Lower Low, RSI: Higher Low
+   bool price_lower_low = (curr_price.price < prev_price.price);
    bool rsi_higher_low = (curr_rsi.rsi > prev_rsi.rsi);
 
-   // Compare PRICE values at the two pivot bars
-   // (captured when RSI pivots were detected)
-   bool price_lower_low = (curr_rsi.price < prev_rsi.price);
-
    if (price_lower_low && rsi_higher_low) {
-      // RSI must be in oversold territory for valid bullish divergence
+      // RSI should be in oversold territory
       if (curr_rsi.rsi < m_rsi_oversold) {
-         result.pivot_current = curr_rsi;
-         result.pivot_previous = prev_rsi;
+         result.pivot_current = curr_price;
+         result.pivot_current.rsi = curr_rsi.rsi;
+         result.pivot_previous = prev_price;
+         result.pivot_previous.rsi = prev_rsi.rsi;
          result.rsi_current = curr_rsi.rsi;
          result.rsi_previous = prev_rsi.rsi;
-         result.price_diff = curr_rsi.price - prev_rsi.price;
+         result.price_diff = curr_price.price - prev_price.price;
          result.rsi_diff = curr_rsi.rsi - prev_rsi.rsi;
          result.bars_between = bars_between;
 
@@ -374,20 +398,13 @@ bool CRSIDivergence::DetectBullishDivergence(SRSIDivergenceResult& result) {
 
 //+------------------------------------------------------------------+
 //| Detect Bearish Divergence                                         |
-//| Pattern: Price Higher High && RSI Lower High                      |
-//| Uses RSI pivots directly - NO price pivot matching                |
-//| Process:                                                           |
-//| 1. Find two most recent RSI Highs (type=="H")                     |
-//| 2. Compare their RSI values: newer < older = Lower High ✓         |
-//| 3. Compare their PRICE values: newer > older = Higher High ✓      |
-//| 4. Ensure RSI is in overbought (>70)                              |
+//| Price: Higher High, RSI: Lower High                               |
 //+------------------------------------------------------------------+
-bool CRSIDivergence::DetectBearishDivergence(SRSIDivergenceResult& result) {
+bool CRSIDivergenceWPricePivots::DetectBearishDivergence(SRSIDivergenceResult& result) {
    int rsi_count = ArraySize(m_rsi_pivots);
    if (rsi_count < 2)
       return false;
 
-   // Find two most recent RSI Highs
    SPivotPoint curr_rsi, prev_rsi;
    bool found_curr = false, found_prev = false;
 
@@ -408,27 +425,34 @@ bool CRSIDivergence::DetectBearishDivergence(SRSIDivergenceResult& result) {
    if (!found_curr || !found_prev)
       return false;
 
-   // Check divergence age
    int bars_between = GetBarShift(prev_rsi.time) - GetBarShift(curr_rsi.time);
    if (bars_between > m_max_divergence_bars || bars_between < 3)
       return false;
 
-   //--- Bearish Divergence Conditions ---
-   // Compare RSI values at the two pivot bars
+   SPivotPoint curr_price, prev_price;
+
+   if (!FindMatchingPricePivot(curr_rsi, curr_price))
+      return false;
+   if (!FindMatchingPricePivot(prev_rsi, prev_price))
+      return false;
+
+   if (curr_price.type != "H" || prev_price.type != "H")
+      return false;
+
+   //--- Bearish Divergence ---
+   // Price: Higher High, RSI: Lower High
+   bool price_higher_high = (curr_price.price > prev_price.price);
    bool rsi_lower_high = (curr_rsi.rsi < prev_rsi.rsi);
 
-   // Compare PRICE values at the two pivot bars
-   // (captured when RSI pivots were detected)
-   bool price_higher_high = (curr_rsi.price > prev_rsi.price);
-
    if (price_higher_high && rsi_lower_high) {
-      // RSI must be in overbought territory for valid bearish divergence
       if (curr_rsi.rsi > m_rsi_overbought) {
-         result.pivot_current = curr_rsi;
-         result.pivot_previous = prev_rsi;
+         result.pivot_current = curr_price;
+         result.pivot_current.rsi = curr_rsi.rsi;
+         result.pivot_previous = prev_price;
+         result.pivot_previous.rsi = prev_rsi.rsi;
          result.rsi_current = curr_rsi.rsi;
          result.rsi_previous = prev_rsi.rsi;
-         result.price_diff = curr_rsi.price - prev_rsi.price;
+         result.price_diff = curr_price.price - prev_price.price;
          result.rsi_diff = curr_rsi.rsi - prev_rsi.rsi;
          result.bars_between = bars_between;
 
@@ -440,9 +464,33 @@ bool CRSIDivergence::DetectBearishDivergence(SRSIDivergenceResult& result) {
 }
 
 //+------------------------------------------------------------------+
+//| Find price pivot that matches RSI pivot within tolerance          |
+//+------------------------------------------------------------------+
+bool CRSIDivergenceWPricePivots::FindMatchingPricePivot(const SPivotPoint& rsi_pivot,
+                                                        SPivotPoint& price_pivot) {
+   int price_count = ArraySize(m_price_pivots);
+   int rsi_bar = GetBarShift(rsi_pivot.time);
+
+   for (int i = price_count - 1; i >= 0; i--) {
+      if (m_price_pivots[i].type != rsi_pivot.type)
+         continue;
+
+      int price_bar = GetBarShift(m_price_pivots[i].time);
+      int bar_diff = MathAbs(price_bar - rsi_bar);
+
+      if (bar_diff <= m_pivot_tolerance) {
+         price_pivot = m_price_pivots[i];
+         return true;
+      }
+   }
+
+   return false;
+}
+
+//+------------------------------------------------------------------+
 //| Add pivot to array                                                |
 //+------------------------------------------------------------------+
-void CRSIDivergence::AddPivot(SPivotPoint& arr[], const SPivotPoint& pivot) {
+void CRSIDivergenceWPricePivots::AddPivot(SPivotPoint& arr[], const SPivotPoint& pivot) {
    int size = ArraySize(arr);
    ArrayResize(arr, size + 1);
    arr[size] = pivot;
@@ -454,7 +502,7 @@ void CRSIDivergence::AddPivot(SPivotPoint& arr[], const SPivotPoint& pivot) {
 //+------------------------------------------------------------------+
 //| Remove old pivots                                                 |
 //+------------------------------------------------------------------+
-void CRSIDivergence::PrunePivots(SPivotPoint& arr[], int max_age_bars) {
+void CRSIDivergenceWPricePivots::PrunePivots(SPivotPoint& arr[], int max_age_bars) {
    int size = ArraySize(arr);
    if (size == 0) return;
 
@@ -475,14 +523,14 @@ void CRSIDivergence::PrunePivots(SPivotPoint& arr[], int max_age_bars) {
 //+------------------------------------------------------------------+
 //| Get bar shift from datetime                                       |
 //+------------------------------------------------------------------+
-int CRSIDivergence::GetBarShift(datetime time) {
+int CRSIDivergenceWPricePivots::GetBarShift(datetime time) {
    return iBarShift(m_symbol, m_timeframe, time);
 }
 
 //+------------------------------------------------------------------+
 //| Copy RSI indicator buffer                                         |
 //+------------------------------------------------------------------+
-bool CRSIDivergence::CopyRSIBuffer(double& buffer[], int count) {
+bool CRSIDivergenceWPricePivots::CopyRSIBuffer(double& buffer[], int count) {
    ArraySetAsSeries(buffer, true);
    ArrayResize(buffer, count);
 
@@ -493,7 +541,7 @@ bool CRSIDivergence::CopyRSIBuffer(double& buffer[], int count) {
 //+------------------------------------------------------------------+
 //| Get current RSI value                                             |
 //+------------------------------------------------------------------+
-double CRSIDivergence::GetCurrentRSI(void) {
+double CRSIDivergenceWPricePivots::GetCurrentRSI(void) {
    double rsi[1];
    if (CopyBuffer(m_rsi_handle, 0, 0, 1, rsi) == 1)
       return rsi[0];
@@ -503,8 +551,10 @@ double CRSIDivergence::GetCurrentRSI(void) {
 //+------------------------------------------------------------------+
 //| Reset pivot arrays                                                |
 //+------------------------------------------------------------------+
-void CRSIDivergence::ResetPivotArrays(void) {
+void CRSIDivergenceWPricePivots::ResetPivotArrays(void) {
+   ArrayFree(m_price_pivots);
    ArrayFree(m_rsi_pivots);
+   ArrayResize(m_price_pivots, 0);
    ArrayResize(m_rsi_pivots, 0);
    m_last_pivot_check_time = 0;
 }

@@ -578,9 +578,8 @@ void DisplayStatus() {
 
    //--- RSI Status
    if (g_rsi_divergence != NULL && g_rsi_divergence.IsInitialized()) {
-      Print(StringFormat("RSI Current: %.2f | Price Pivots: %d | RSI Pivots: %d",
+      Print(StringFormat("RSI Current: %.2f | RSI Pivots: %d",
                          g_rsi_divergence.GetCurrentRSI(),
-                         g_rsi_divergence.GetPricePivotCount(),
                          g_rsi_divergence.GetRSIPivotCount()));
    }
 

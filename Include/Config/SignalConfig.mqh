@@ -193,7 +193,7 @@ class CSignalConfig {
       m_correlation.symbol1_index = 0;  // Index 0 = XAUUSDm (primary)
       m_correlation.symbol2_index = 2;  // Index 2 = DXYm (correlation filter)
       m_correlation.timeframe = PERIOD_M5;
-      m_correlation.period = 14;  // 50;
+      m_correlation.period = 50;
       m_correlation.threshold = -0.6;
       m_correlation.strong_threshold = -0.7;
 
