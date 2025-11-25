@@ -497,10 +497,10 @@ class CTradingConfig {
       //=============================================================
       // SECTION 3: Risk Per Phase
       //=============================================================
-      m_risk.risk_percent_p1 = 0.10;        // 10% risk in Phase 1
-      m_risk.risk_percent_p2 = 0.15;        // 15% risk in Phase 2
-      m_risk.risk_percent_p3 = 0.20;        // 20% risk in Phase 3
-      m_risk.risk_bonus_confluence = 0.10;  // +10% for 5/5 confluence
+      m_risk.risk_percent_p1 = 0.010;        // 10% risk in Phase 1
+      m_risk.risk_percent_p2 = 0.015;        // 15% risk in Phase 2
+      m_risk.risk_percent_p3 = 0.020;        // 20% risk in Phase 3
+      m_risk.risk_bonus_confluence = 0.010;  // +10% for 5/5 confluence
 
       //=============================================================
       // SECTION 4: Pyramiding Limits

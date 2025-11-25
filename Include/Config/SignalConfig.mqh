@@ -264,7 +264,7 @@ class CSignalConfig {
       // h4_period=PERIOD_H4, ma_period=200, buffer_pips=50.0, adx_threshold=25.0, etc.
 
       //--- Session/Spread Filter Settings ---
-      m_filters.session_filter_enabled = false;
+      m_filters.session_filter_enabled = true;
       m_filters.spread_filter_enabled = true;
    }
 };
