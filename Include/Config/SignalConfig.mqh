@@ -9,11 +9,11 @@
 //| Global Signal Settings                                            |
 //+------------------------------------------------------------------+
 struct SSignalGlobalConfig {
-   int min_confluence_score;  // Minimum score to take trades
-   bool require_base_signal;  // Must have RSI or Harmonic before trading
+   int min_confluence_score;            // Minimum score to take trades
+   bool require_rsi_divergence_signal;  // Must have RSI or Harmonic before trading
 
    // Default constructor
-   SSignalGlobalConfig() : min_confluence_score(3), require_base_signal(true) {}
+   SSignalGlobalConfig() : min_confluence_score(3), require_rsi_divergence_signal(true) {}
 };
 
 //+------------------------------------------------------------------+
@@ -21,7 +21,7 @@ struct SSignalGlobalConfig {
 //+------------------------------------------------------------------+
 struct SRSIConfig {
    bool enabled;
-   string symbol;
+   string symbol;  // Symbol configured like other analyzers
    ENUM_TIMEFRAMES timeframe;
    int rsi_period;
    int pivot_left;           // Bars to left for pivot confirmation
@@ -89,14 +89,42 @@ struct SHarmonicConfig {
 
 //+------------------------------------------------------------------+
 //| Trend Filter Configuration Structure                             |
+//| Replaces old STrendConfig with full parameter control            |
+//| Symbol field follows SAME pattern as SRSIConfig                  |
 //+------------------------------------------------------------------+
-struct STrendConfig {
+//+------------------------------------------------------------------+
+//| Trend Filter Configuration Structure                             |
+//+------------------------------------------------------------------+
+struct TrendFilterConfig {
    bool enabled;
    string symbol;
-   int ema_period;
-   int ema_buffer_pips;
+   ENUM_TIMEFRAMES h4_period;
+   ENUM_TIMEFRAMES h1_period;
+   int ma_period;
+   ENUM_MA_METHOD ma_method;     // CHANGED: Correct enum type
+   ENUM_APPLIED_PRICE ma_price;  // CHANGED: Correct enum type
+   double buffer_pips;
+   double strong_trend_threshold_pips;
    int adx_period;
-   int adx_threshold;
+   double adx_threshold;
+   int sync_timeout_seconds;
+   int history_buffer_bars;
+
+   TrendFilterConfig(void) {
+      enabled = false;
+      symbol = "XAUUSDm";
+      h4_period = PERIOD_H4;
+      h1_period = PERIOD_H1;
+      ma_period = 200;
+      ma_method = MODE_EMA;    // Now properly typed
+      ma_price = PRICE_CLOSE;  // Now properly typed
+      buffer_pips = 50.0;
+      strong_trend_threshold_pips = 100.0;
+      adx_period = 14;
+      adx_threshold = 25.0;
+      sync_timeout_seconds = 300;
+      history_buffer_bars = 10;
+   }
 };
 
 //+------------------------------------------------------------------+
@@ -121,7 +149,7 @@ class CSignalConfig {
    SRSIConfig m_rsi;
    SCorrelationConfig m_correlation;
    SHarmonicConfig m_harmonic;
-   STrendConfig m_trend;
+   TrendFilterConfig m_trend;  // Uses full config struct with symbol field
    SFilterConfig m_filters;
 
   public:
@@ -131,12 +159,12 @@ class CSignalConfig {
 
    // Getters
    int GetMinConfluenceScore(void) const { return m_global.min_confluence_score; }
-   bool RequiresBaseSignal(void) const { return m_global.require_base_signal; }
+   bool RequiresRSIDivergenceSignal(void) const { return m_global.require_rsi_divergence_signal; }
    SSignalGlobalConfig GetGlobalConfig(void) const { return m_global; }
    SRSIConfig GetRSIConfig(void) const { return m_rsi; }
    SCorrelationConfig GetCorrelationConfig(void) const { return m_correlation; }
    SHarmonicConfig GetHarmonicConfig(void) const { return m_harmonic; }
-   STrendConfig GetTrendConfig(void) const { return m_trend; }
+   TrendFilterConfig GetTrendConfig(void) const { return m_trend; }
    SFilterConfig GetFilterConfig(void) const { return m_filters; }
 
    // Check if specific analyzers are enabled
@@ -150,8 +178,8 @@ class CSignalConfig {
   private:
    void InitializeChimeraConfig(void) {
       //--- Global Signal Settings ---
-      m_global.min_confluence_score = 3;    // Minimum score to trade (out of 9)
-      m_global.require_base_signal = true;  // Must have RSI or Harmonic
+      m_global.min_confluence_score = 3;              // Minimum score to trade (out of 9)
+      m_global.require_rsi_divergence_signal = true;  // Must have RSI or Harmonic
 
       //--- RSI Divergence Settings ---
       m_rsi.enabled = true;
@@ -234,12 +262,11 @@ class CSignalConfig {
       m_harmonic.patterns[3].AD_XA = 0.786;  // 0.786 of XC
 
       //--- Trend Filter Settings ---
-      m_trend.enabled = false;
-      m_trend.symbol = "XAUUSDm";
-      m_trend.ema_period = 200;
-      m_trend.ema_buffer_pips = 50;
-      m_trend.adx_period = 14;
-      m_trend.adx_threshold = 25;
+      // Symbol follows SAME pattern as m_rsi.symbol - explicitly set in InitializeChimeraConfig
+      m_trend.enabled = true;      // Disabled by default per original spec
+      m_trend.symbol = "XAUUSDm";  // Explicitly set like m_rsi.symbol = "XAUUSDm";
+      // All other parameters use TrendFilterConfig() constructor defaults:
+      // h4_period=PERIOD_H4, ma_period=200, buffer_pips=50.0, adx_threshold=25.0, etc.
 
       //--- Session/Spread Filter Settings ---
       m_filters.session_filter_enabled = false;
