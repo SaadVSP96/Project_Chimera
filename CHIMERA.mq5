@@ -440,7 +440,7 @@ void RunAnalyzers() {
    //--- RSI Divergence
    if (g_rsi_divergence != NULL && g_rsi_divergence.IsInitialized()) {
       SRSIDivergenceResult rsi_result;
-      g_rsi_divergence.Analyze(rsi_result);
+      g_rsi_divergence.Analyze(rsi_result, g_is_new_bar);
       g_signal_state.SetRSIDivergence(rsi_result);
 
       // Log detection

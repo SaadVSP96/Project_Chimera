@@ -9,6 +9,7 @@
 #include "../Config/SignalConfig.mqh"
 #include "../Core/MarketData/CMarketDataManager.mqh"
 #include "../Core/Signal/SignalStructs.mqh"
+#include "../Core/VisualizationLibrary/ChartObjectsVisualization.mqh"
 
 //+------------------------------------------------------------------+
 //| RSI Divergence Detector Class                                    |
@@ -24,7 +25,6 @@ class CRSIDivergence {
    int m_rsi_period;
    int m_pivot_left;
    int m_pivot_right;
-   // int m_pivot_tolerance;  // COMMENTED OUT - no longer needed (RSI pivots are anchor points)
    int m_max_divergence_bars;
    double m_rsi_oversold;
    double m_rsi_overbought;
@@ -39,6 +39,14 @@ class CRSIDivergence {
    //--- State tracking
    datetime m_last_pivot_check_time;
    bool m_initialized;
+   bool m_is_new_bar;
+
+   // Visulaization instances
+   double m_rsi_buffer[];
+   int m_rsi_buffer_size;
+   CLabel* m_rsi_pivot_high_labels;
+   CLabel* m_rsi_pivot_low_labels;
+   CIndicatorLine* m_rsi_indicator_plot;
 
   public:
    //--- Constructor / Destructor
@@ -49,7 +57,7 @@ class CRSIDivergence {
    bool Initialize(CMarketDataManager* data_manager, const SRSIConfig& config);
 
    //--- Main Analysis Method
-   void Analyze(SRSIDivergenceResult& result);
+   void Analyze(SRSIDivergenceResult& result, bool is_new_bar);
 
    //--- Accessors
    double GetCurrentRSI(void);
@@ -85,7 +93,9 @@ CRSIDivergence::CRSIDivergence(void) {
    m_max_pivots = 50;
    m_last_pivot_check_time = 0;
    m_initialized = false;
-
+   m_rsi_pivot_high_labels = NULL;
+   m_rsi_pivot_low_labels = NULL;
+   m_rsi_indicator_plot = NULL;
    ArrayResize(m_rsi_pivots, 0);
 }
 
@@ -95,6 +105,13 @@ CRSIDivergence::CRSIDivergence(void) {
 CRSIDivergence::~CRSIDivergence(void) {
    if (m_rsi_handle != INVALID_HANDLE)
       IndicatorRelease(m_rsi_handle);
+
+   // NEW: Cleanup visualization
+   if (m_rsi_indicator_plot != NULL) {
+      m_rsi_indicator_plot.Delete();
+      delete m_rsi_indicator_plot;
+      m_rsi_indicator_plot = NULL;
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -137,6 +154,21 @@ bool CRSIDivergence::Initialize(CMarketDataManager* data_manager, const SRSIConf
    ResetPivotArrays();
    m_initialized = true;
 
+   // call constructor and assign instance to pointer in private vars
+   m_rsi_pivot_high_labels = new CLabel("RSIPivotHigh", config.max_no_rsi_pivot_highs_to_display, 0);
+   m_rsi_pivot_low_labels = new CLabel("RSIPivotLow", config.max_no_rsi_pivot_lows_to_display, 0);
+
+   // NEW: Initialize RSI buffer
+   m_rsi_buffer_size = config.rsi_buffer_size;
+   ArrayResize(m_rsi_buffer, m_rsi_buffer_size);
+   ArraySetAsSeries(m_rsi_buffer, true);
+
+   // NEW: Create indicator line visualization
+   if (config.rsi_line_visualization_enabled) {
+      m_rsi_indicator_plot = new CIndicatorLine("RSIIndicatorLine", config.rsi_line_chart_id);
+      m_rsi_indicator_plot.SetDataSource(m_rsi_buffer);
+   }
+
    Print("CRSIDivergence: Initialized for ", m_symbol, " ", EnumToString(m_timeframe),
          " RSI(", m_rsi_period, ") Pivots(L:", m_pivot_left, " R:", m_pivot_right, ")");
 
@@ -147,12 +179,22 @@ bool CRSIDivergence::Initialize(CMarketDataManager* data_manager, const SRSIConf
 //| Main Analysis - Call each tick                                    |
 //| SIMPLIFIED: Only detects RSI pivots, no price pivot matching      |
 //+------------------------------------------------------------------+
-void CRSIDivergence::Analyze(SRSIDivergenceResult& result) {
+void CRSIDivergence::Analyze(SRSIDivergenceResult& result, bool is_new_bar) {
    // Reset result
    result.Reset();
 
    if (!m_initialized || m_data == NULL)
       return;
+
+   // NEW: Update RSI buffer every tick
+   if (!CopyBuffer(m_rsi_handle, 0, 0, m_rsi_buffer_size, m_rsi_buffer)) {
+      return;
+   }
+
+   // NEW: Redraw indicator visualization every tick
+   if (m_rsi_indicator_plot != NULL) {
+      m_rsi_indicator_plot.Redraw(m_rsi_buffer);
+   }
 
    // Candidate bar for pivot detection
    // Bar at index (1 + pivot_right) because:
@@ -185,6 +227,11 @@ void CRSIDivergence::Analyze(SRSIDivergenceResult& result) {
       result.detection_time = TimeCurrent();
       return;
    }
+   if (is_new_bar) {
+      // Cleanup old objects
+      m_rsi_pivot_high_labels.Cleanup();
+      m_rsi_pivot_low_labels.Cleanup();
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -195,7 +242,7 @@ void CRSIDivergence::Analyze(SRSIDivergenceResult& result) {
 void CRSIDivergence::DetectPivots(int candidate_bar) {
    int lookback = candidate_bar + m_pivot_left + 10;
 
-   // Get data from CMarketDataManager
+   // Get data from CMarketDataManager+
    double high[], low[];
    datetime time[];
    double rsi[];
@@ -239,6 +286,7 @@ void CRSIDivergence::DetectPivots(int candidate_bar) {
       p.rsi = rsi[candidate_bar];
       p.is_valid = true;
       AddPivot(m_rsi_pivots, p);
+      m_rsi_pivot_high_labels.Draw(p.time, p.price, "RSI_H", clrRed, 8, ANCHOR_RIGHT_UPPER);
    }
 
    //--- Detect RSI Pivot Low ---
@@ -254,6 +302,7 @@ void CRSIDivergence::DetectPivots(int candidate_bar) {
       p.rsi = rsi[candidate_bar];
       p.is_valid = true;
       AddPivot(m_rsi_pivots, p);
+      m_rsi_pivot_low_labels.Draw(p.time, p.price, "RSI_L", clrGreen, 8, ANCHOR_RIGHT_LOWER);
    }
 }
 
