@@ -46,6 +46,8 @@ class CRSIDivergence {
    int m_rsi_buffer_size;
    CLabel* m_rsi_pivot_high_labels;
    CLabel* m_rsi_pivot_low_labels;
+   CLine* m_rsi_bullish_divergence_lines;
+   CLine* m_rsi_bearish_divergence_lines;
    CIndicatorLine* m_rsi_indicator_plot;
 
   public:
@@ -95,6 +97,8 @@ CRSIDivergence::CRSIDivergence(void) {
    m_initialized = false;
    m_rsi_pivot_high_labels = NULL;
    m_rsi_pivot_low_labels = NULL;
+   m_rsi_bullish_divergence_lines = NULL;
+   m_rsi_bearish_divergence_lines = NULL;
    m_rsi_indicator_plot = NULL;
    ArrayResize(m_rsi_pivots, 0);
 }
@@ -157,7 +161,8 @@ bool CRSIDivergence::Initialize(CMarketDataManager* data_manager, const SRSIConf
    // call constructor and assign instance to pointer in private vars
    m_rsi_pivot_high_labels = new CLabel("RSIPivotHigh", config.max_no_rsi_pivot_highs_to_display, 0);
    m_rsi_pivot_low_labels = new CLabel("RSIPivotLow", config.max_no_rsi_pivot_lows_to_display, 0);
-
+   m_rsi_bullish_divergence_lines = new CLine("RSIBullishDivergence", config.max_no_rsi_bullish_divergence_lines_to_display, config.rsi_line_chart_id);
+   m_rsi_bearish_divergence_lines = new CLine("RSIBearishDivergence", config.max_no_rsi_bearish_divergence_lines_to_display, config.rsi_line_chart_id);
    // NEW: Initialize RSI buffer
    m_rsi_buffer_size = config.rsi_buffer_size;
    ArrayResize(m_rsi_buffer, m_rsi_buffer_size);
@@ -231,6 +236,8 @@ void CRSIDivergence::Analyze(SRSIDivergenceResult& result, bool is_new_bar) {
       // Cleanup old objects
       m_rsi_pivot_high_labels.Cleanup();
       m_rsi_pivot_low_labels.Cleanup();
+      m_rsi_bullish_divergence_lines.Cleanup();
+      m_rsi_bearish_divergence_lines.Cleanup();
    }
 }
 
@@ -414,6 +421,10 @@ bool CRSIDivergence::DetectBullishDivergence(SRSIDivergenceResult& result) {
          result.rsi_diff = curr_rsi.rsi - prev_rsi.rsi;
          result.bars_between = bars_between;
 
+         // Valid Bullish Divergence Detected - Now Draw.
+         m_rsi_bullish_divergence_lines.Draw(prev_rsi.time, prev_rsi.rsi,
+                                             curr_rsi.time, curr_rsi.rsi,
+                                             clrGreen, STYLE_SOLID, 2);
          return true;
       }
    }
@@ -480,6 +491,11 @@ bool CRSIDivergence::DetectBearishDivergence(SRSIDivergenceResult& result) {
          result.price_diff = curr_rsi.price - prev_rsi.price;
          result.rsi_diff = curr_rsi.rsi - prev_rsi.rsi;
          result.bars_between = bars_between;
+
+         // Valid Bearish Divergence Detected - Now Draw.
+         m_rsi_bearish_divergence_lines.Draw(prev_rsi.time, prev_rsi.rsi,
+                                             curr_rsi.time, curr_rsi.rsi,
+                                             clrRed, STYLE_SOLID, 2);
 
          return true;
       }

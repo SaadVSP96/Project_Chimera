@@ -24,15 +24,17 @@ struct SRSIConfig {
    string symbol;  // Symbol configured like other analyzers
    ENUM_TIMEFRAMES timeframe;
    int rsi_period;
-   int pivot_left;                         // Bars to left for pivot confirmation
-   int pivot_right;                        // Bars to right for pivot confirmation
-   int pivot_tolerance;                    // Bar tolerance for matching price/RSI pivots
-   int max_divergence_bars;                // Max bars between divergence pivots
-   double oversold;                        // RSI threshold for bullish div
-   double overbought;                      // RSI threshold for bearish div
-   int max_no_rsi_pivot_highs_to_display;  // the maximum no. of rsi high pivots to display
-   int max_no_rsi_pivot_lows_to_display;   // the maximum no. of rsi low pivots to display
-   int no_of_bars_to_visulaize_rsi_line;   // the number of bars behind the current bar, till where you want to display rsi
+   int pivot_left;                                      // Bars to left for pivot confirmation
+   int pivot_right;                                     // Bars to right for pivot confirmation
+   int pivot_tolerance;                                 // Bar tolerance for matching price/RSI pivots
+   int max_divergence_bars;                             // Max bars between divergence pivots
+   double oversold;                                     // RSI threshold for bullish div
+   double overbought;                                   // RSI threshold for bearish div
+   int max_no_rsi_pivot_highs_to_display;               // the maximum no. of rsi high pivots to display
+   int max_no_rsi_pivot_lows_to_display;                // the maximum no. of rsi low pivots to display
+   int max_no_rsi_bullish_divergence_lines_to_display;  // the maximum no. of rsi bullish to display
+   int max_no_rsi_bearish_divergence_lines_to_display;  // the maximum no. of rsi bearish to display
+   int no_of_bars_to_visulaize_rsi_line;                // the number of bars behind the current bar, till where you want to display rsi
 
    bool rsi_line_visualization_enabled;
    int rsi_line_chart_id;  // 0=main, 1+=subwindow
@@ -198,6 +200,8 @@ class CSignalConfig {
       m_rsi.overbought = 60.0;
       m_rsi.max_no_rsi_pivot_highs_to_display = 40;
       m_rsi.max_no_rsi_pivot_lows_to_display = 40;
+      m_rsi.max_no_rsi_bullish_divergence_lines_to_display = 40;
+      m_rsi.max_no_rsi_bearish_divergence_lines_to_display = 40;
 
       m_rsi.rsi_line_visualization_enabled = true;
       m_rsi.rsi_line_chart_id = 1;  // Subwindow 1

@@ -473,11 +473,11 @@ class CIndicatorLine {
          if (val1 == 0 || val2 == 0) continue;
 
          string name = m_prefix + "_Seg_" + IntegerToString(m_counter++);
-         ObjectCreate(m_chartID, name, OBJ_TREND, m_chartID, time1, val1, time2, val2);
-         ObjectSetInteger(m_chartID, name, OBJPROP_COLOR, lineColor);
-         ObjectSetInteger(m_chartID, name, OBJPROP_STYLE, style);
-         ObjectSetInteger(m_chartID, name, OBJPROP_WIDTH, width);
-         ObjectSetInteger(m_chartID, name, OBJPROP_BACK, true);
+         ObjectCreate(0, name, OBJ_TREND, m_chartID, time1, val1, time2, val2);
+         ObjectSetInteger(0, name, OBJPROP_COLOR, lineColor);
+         ObjectSetInteger(0, name, OBJPROP_STYLE, style);
+         ObjectSetInteger(0, name, OBJPROP_WIDTH, width);
+         ObjectSetInteger(0, name, OBJPROP_BACK, true);
       }
       return true;
    }
@@ -486,7 +486,7 @@ class CIndicatorLine {
    void Redraw(double& buffer[]) {
       // Delete all segments
       for (int i = 0; i < m_counter; i++) {
-         ObjectDelete(m_chartID, m_prefix + "_Seg_" + IntegerToString(i));
+         ObjectDelete(0, m_prefix + "_Seg_" + IntegerToString(i));
       }
       m_counter = 0;
       // Redraw with current buffer data
@@ -497,8 +497,8 @@ class CIndicatorLine {
    void Hide() {
       for (int i = 0; i < m_counter; i++) {
          string name = m_prefix + "_Seg_" + IntegerToString(i);
-         if (ObjectFind(m_chartID, name) >= 0) {
-            ObjectSetInteger(m_chartID, name, OBJPROP_COLOR, clrNONE);
+         if (ObjectFind(0, name) >= 0) {
+            ObjectSetInteger(0, name, OBJPROP_COLOR, clrNONE);
          }
       }
    }
@@ -507,8 +507,8 @@ class CIndicatorLine {
    void Show() {
       for (int i = 0; i < m_counter; i++) {
          string name = m_prefix + "_Seg_" + IntegerToString(i);
-         if (ObjectFind(m_chartID, name) >= 0) {
-            ObjectSetInteger(m_chartID, name, OBJPROP_COLOR, m_lastColor);
+         if (ObjectFind(0, name) >= 0) {
+            ObjectSetInteger(0, name, OBJPROP_COLOR, m_lastColor);
          }
       }
    }
@@ -516,7 +516,7 @@ class CIndicatorLine {
    // NEW: Delete all segments
    void Delete() {
       for (int i = 0; i < m_counter; i++) {
-         ObjectDelete(m_chartID, m_prefix + "_Seg_" + IntegerToString(i));
+         ObjectDelete(0, m_prefix + "_Seg_" + IntegerToString(i));
       }
       m_counter = 0;
    }
