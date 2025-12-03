@@ -41,7 +41,13 @@ class CRSIDivergence {
    bool m_initialized;
    bool m_is_new_bar;
 
-   // Visulaization instances
+   //--- Divergence draw tracking (prevent duplicate draws on same divergence)
+   datetime m_last_bullish_div_curr_time;  // Time of current pivot in last drawn bullish div
+   datetime m_last_bullish_div_prev_time;  // Time of previous pivot in last drawn bullish div
+   datetime m_last_bearish_div_curr_time;  // Time of current pivot in last drawn bearish div
+   datetime m_last_bearish_div_prev_time;  // Time of previous pivot in last drawn bearish div
+
+   // Visualization instances
    double m_rsi_buffer[];
    int m_rsi_buffer_size;
    CLabel* m_rsi_pivot_high_labels;
@@ -100,6 +106,13 @@ CRSIDivergence::CRSIDivergence(void) {
    m_rsi_bullish_divergence_lines = NULL;
    m_rsi_bearish_divergence_lines = NULL;
    m_rsi_indicator_plot = NULL;
+
+   // Initialize divergence tracking (0 = no divergence drawn yet)
+   m_last_bullish_div_curr_time = 0;
+   m_last_bullish_div_prev_time = 0;
+   m_last_bearish_div_curr_time = 0;
+   m_last_bearish_div_prev_time = 0;
+
    ArrayResize(m_rsi_pivots, 0);
 }
 
@@ -421,10 +434,19 @@ bool CRSIDivergence::DetectBullishDivergence(SRSIDivergenceResult& result) {
          result.rsi_diff = curr_rsi.rsi - prev_rsi.rsi;
          result.bars_between = bars_between;
 
-         // Valid Bullish Divergence Detected - Now Draw.
-         m_rsi_bullish_divergence_lines.Draw(prev_rsi.time, prev_rsi.rsi,
-                                             curr_rsi.time, curr_rsi.rsi,
-                                             clrGreen, STYLE_SOLID, 2);
+         // Only draw if this is a NEW divergence (different from last drawn)
+         // This prevents drawing 100s of identical lines between bars
+         bool is_new_divergence = (curr_rsi.time != m_last_bullish_div_curr_time ||
+                                   prev_rsi.time != m_last_bullish_div_prev_time);
+
+         if (is_new_divergence) {
+            m_rsi_bullish_divergence_lines.Draw(prev_rsi.time, prev_rsi.rsi,
+                                                curr_rsi.time, curr_rsi.rsi,
+                                                clrGreen, STYLE_SOLID, 2);
+            // Update tracking
+            m_last_bullish_div_curr_time = curr_rsi.time;
+            m_last_bullish_div_prev_time = prev_rsi.time;
+         }
          return true;
       }
    }
@@ -492,11 +514,19 @@ bool CRSIDivergence::DetectBearishDivergence(SRSIDivergenceResult& result) {
          result.rsi_diff = curr_rsi.rsi - prev_rsi.rsi;
          result.bars_between = bars_between;
 
-         // Valid Bearish Divergence Detected - Now Draw.
-         m_rsi_bearish_divergence_lines.Draw(prev_rsi.time, prev_rsi.rsi,
-                                             curr_rsi.time, curr_rsi.rsi,
-                                             clrRed, STYLE_SOLID, 2);
+         // Only draw if this is a NEW divergence (different from last drawn)
+         // This prevents drawing 100s of identical lines between bars
+         bool is_new_divergence = (curr_rsi.time != m_last_bearish_div_curr_time ||
+                                   prev_rsi.time != m_last_bearish_div_prev_time);
 
+         if (is_new_divergence) {
+            m_rsi_bearish_divergence_lines.Draw(prev_rsi.time, prev_rsi.rsi,
+                                                curr_rsi.time, curr_rsi.rsi,
+                                                clrRed, STYLE_SOLID, 2);
+            // Update tracking
+            m_last_bearish_div_curr_time = curr_rsi.time;
+            m_last_bearish_div_prev_time = prev_rsi.time;
+         }
          return true;
       }
    }
