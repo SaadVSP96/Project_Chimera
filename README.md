@@ -3,10 +3,6 @@
 A modular Expert Advisor for MetaTrader 5 that automates XAUUSD (Gold) trading through multi-analyzer confluence and advanced technical pattern recognition.
 
 ## Overview
-Motivation
-Quick Start
-Usage
-Contributing
 Project Chimera combines multiple analytical frameworks into a single cohesive trading system. Rather than relying on a single indicator, the EA synthesizes signals from RSI divergence detection, harmonic pattern analysis, multi-timeframe correlation filtering, and trend confirmation to execute high-confidence trades.
 
 ## Architecture
