@@ -3,7 +3,10 @@
 A modular Expert Advisor for MetaTrader 5 that automates XAUUSD (Gold) trading through multi-analyzer confluence and advanced technical pattern recognition.
 
 ## Overview
-
+Motivation
+Quick Start
+Usage
+Contributing
 Project Chimera combines multiple analytical frameworks into a single cohesive trading system. Rather than relying on a single indicator, the EA synthesizes signals from RSI divergence detection, harmonic pattern analysis, multi-timeframe correlation filtering, and trend confirmation to execute high-confidence trades.
 
 ## Architecture
@@ -45,20 +48,3 @@ Custom lightweight chart object visualization system supporting:
 - **Architecture Pattern:** Dependency Injection, Singleton, Strategy, Observer, Facade
 - **Configuration:** Struct-based with getter methods for immutable config access
 
-## Module Design Philosophy
-
-Each analyzer operates independently with its own:
-- Data buffer management
-- Calculation logic
-- State tracking
-- Visualization instances
-
-The main EA orchestrates these modules, collecting signals and applying confluence filtering before trade execution.
-
-## Performance Characteristics
-
-- Market data updates: Sub-millisecond per symbol
-- RSI divergence detection: ~1-2ms per analysis cycle
-- Harmonic pattern scanning: ~3-5ms per analysis cycle
-- Indicator visualization redraw: ~2-3ms per chart update
-- Memory footprint: Minimal buffer allocation with precise size management
